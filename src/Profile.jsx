@@ -28,7 +28,7 @@ import { manualCaloriesForDate } from './utils/calories';
 import { canHold, goalsShortOfHalf, isHoldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
 import ShieldLadder from './components/ShieldLadder';
 import { CheckBadge as GoalCheckBadge } from './components/WeekGoalsHero';
-import { CARD_SURFACE, GOLD, TEXT_MUTED, NUM, hexToRgb, CATEGORY_COLORS as CATEGORY_COLORS_BY_CAT } from './utils/designTokens';
+import { CARD_SURFACE, GOLD, TEXT_MUTED, goldMix, NUM, hexToRgb, CATEGORY_COLORS as CATEGORY_COLORS_BY_CAT } from './utils/designTokens';
 
 // Caps labels on the Stats cards (Nov 2026 redesign)
 const CAPS_LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8a8a8a' };
@@ -1206,8 +1206,14 @@ export default function ProfilePage(props) {
                   // Nov 2026 redesign: a won week is a gold check badge on the neutral cell (gold is
                   // the winning streak's colour); green no longer marks it. A shielded week was
                   // kept, not won, so it reads like a held one.
-                  const bgDefault = isVacation ? 'rgba(255,149,0,0.15)' : isInjury ? 'rgba(167,139,250,0.15)' : (isHeld || (isShielded && !goalsHit)) ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.05)';
-                  const bgPressed = isVacation ? 'rgba(255,149,0,0.28)' : isInjury ? 'rgba(167,139,250,0.28)' : (isHeld || (isShielded && !goalsHit)) ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.1)';
+                  // Felipe's option A, "Just the check" (mocks/mock-calendar-weeks.html): one icon straight
+                  // on a faint tile, no inner circles, no colour except the gold won check and the live %.
+                  const isFutureWeek = !judged;
+                  const bgDefault = isFutureWeek ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.045)';
+                  const bgPressed = 'rgba(255,255,255,0.1)';
+                  const MarkIcon = ({ d, color, size = 14, strokeWidth = 2 }) => (
+                    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d.map((p) => <path key={p} d={p} />)}</svg>
+                  );
                   return (
                     <button
                       onClick={() => {
@@ -1242,26 +1248,25 @@ export default function ProfilePage(props) {
                       }}
                     >
                       {isVacation ? (
-                        <span style={{ fontSize: '13px', lineHeight: 1 }}>🌴</span>
+                        // Vacation: a sun line icon
+                        <MarkIcon color="#aaa" d={['M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0', 'M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7']} />
                       ) : isInjury ? (
-                        <span style={{ fontSize: '13px', lineHeight: 1 }}>🩹</span>
-                      ) : isShielded ? (
-                        <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>
+                        // Injury: a bandage line icon
+                        <MarkIcon color="#aaa" d={['M14 12l0 .01', 'M10 12l0 .01', 'M12 10l0 .01', 'M12 14l0 .01', 'M4.5 12.5l8 -8a4.94 4.94 0 0 1 7 7l-8 8a4.94 4.94 0 0 1 -7 -7']} />
+                      ) : isShielded || (isHeld && !goalsHit) ? (
+                        // Held / shielded: kept, not won
+                        <MarkIcon color="#aaa" d={['M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3']} />
                       ) : goalsHit ? (
-                        <GoalCheckBadge color={GOLD} size={22} />
+                        // Won: the gold check straight on the tile
+                        <MarkIcon color={GOLD} size={16} strokeWidth={3} d={['M20 6L9 17l-5-5']} />
+                      ) : isCurrentCalendarWeek && !isWeekLocked ? (
+                        // This week: how far along, warming to gold like Home's week %
+                        <span style={{ fontSize: 11.5, fontWeight: 800, color: goldMix(judged.percent) }}>{judged.percent}%</span>
                       ) : judged && !isWeekLocked ? (
-                        // Not won (yet): how close it got. The live week in gold, like Home's
-                        // Week Progress, with a faint outline to pick it out.
-                        <span
-                          className="w-full h-full rounded-md flex items-center justify-center text-[10px] font-bold"
-                          style={isCurrentCalendarWeek
-                            ? { color: '#FFD700', boxShadow: 'inset 0 0 0 1px rgba(255,215,0,0.35)' }
-                            : { color: '#aaa' }}
-                        >
-                          {judged.percent}%
-                        </span>
+                        // Missed: the empty tile
+                        null
                       ) : (
-                        <SectionIcon type="chart" size={12} color="#aaa" />
+                        <SectionIcon type="chart" size={12} color="#555" />
                       )}
                     </button>
                   );

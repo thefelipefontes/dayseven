@@ -11863,7 +11863,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                 </svg>
               </div>
               <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
-                We'll tell you when a ring is still open — before the week closes. Tap to turn on reminders.
+                We'll tell you when a goal is still open — before the week closes. Tap to turn on reminders.
               </div>
             </div>
             <button
@@ -19849,7 +19849,7 @@ export default function DaySevenApp() {
       {showHealthReconnect && (
         <HKPrescreen
           title="Reconnect Apple Health."
-          body="Your Apple Health permission was reset — that happens after a reinstall or a move to a new phone. Reconnect to keep logging workouts to your rings automatically."
+          body="Your Apple Health permission was reset — that happens after a reinstall or a move to a new phone. Reconnect to keep logging workouts automatically."
           cta="Reconnect Apple Health"
           onConnected={(granted) => {
             setShowHealthReconnect(false);

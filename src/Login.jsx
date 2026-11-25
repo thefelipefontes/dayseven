@@ -257,7 +257,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               Save your progress.
             </h1>
             <p className="text-gray-400 text-[15px] leading-relaxed">
-              Your rings are ready. Create an account so your first week is never lost.
+              Your week is ready. Create an account so your first week is never lost.
             </p>
           </div>
         ) : (

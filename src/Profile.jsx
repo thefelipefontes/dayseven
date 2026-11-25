@@ -1640,7 +1640,7 @@ export default function ProfilePage(props) {
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M7 21l3 -4" /><path d="M16 21l-2 -4l-3 -3l1 -6" /><path d="M6 12l2 -3l4 -1l3 3l3 1" /></svg>
                       </div>
                       <div style={{ fontSize: 15, fontWeight: 600 }}>No workouts logged</div>
-                      <div style={{ fontSize: 12.5, color: '#8a8a8a', margin: '4px 0 14px' }}>A rest day still counts toward a winning week.</div>
+                      <div style={{ fontSize: 12.5, color: '#8a8a8a', margin: '4px 0 14px' }}>Your steps still count. Your sessions just need to happen on other days.</div>
                       <button
                         onClick={() => { closeDayModal(); onAddActivity && onAddActivity(selectedDate); }}
                         className="bg-white text-black active:bg-[#e5e5e5] transition-colors"

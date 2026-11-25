@@ -183,6 +183,12 @@ struct ActiveWorkoutView: View {
         .task {
             await startWorkout()
         }
+        // Resuming slides back to the timer, like Apple's Workout app. Watching the state, not
+        // the button, also covers a resume from the phone. Pausing stays on the controls.
+        .onChange(of: wm.isPaused) { wasPaused, isPaused in
+            guard wasPaused, !isPaused, wm.isActive, !wm.isEnding else { return }
+            withAnimation { wm.workoutPageIndex = 1 }
+        }
         .onChange(of: wm.isEnding) { _, ending in
             if ending {
                 // Wait 0.8s before showing "Saving..." — if it finishes faster, skip it

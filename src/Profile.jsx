@@ -973,7 +973,7 @@ export default function ProfilePage(props) {
         <div className="p-5 mb-2.5" style={CARD_SURFACE}>
           <div className="flex items-end justify-between">
             <div>
-              <div className="flex items-baseline" style={{ ...NUM.big, lineHeight: 1, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
+              <div className="flex items-baseline" style={{ ...NUM.big, lineHeight: 0.8, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
                 {streaks.master || 0}
                 {/* A word, not a "%": a little more room than NUM.bigSmall's 2px */}
                 <span style={{ ...NUM.bigSmall, marginLeft: 5, fontWeight: 700, color: 'rgba(255,215,0,0.75)' }}>{streaks.master === 1 ? 'week' : 'weeks'}</span>

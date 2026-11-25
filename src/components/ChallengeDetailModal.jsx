@@ -192,6 +192,7 @@ export default function ChallengeDetailModal({
 
   const category = challenge.matchRule?.category;
   const color = CATEGORY_COLOR[category] || '#777';
+  const rgb = hexToRgb(color);
 
   const meName = userProfile?.displayName || userProfile?.username || 'You';
   const mePhotoURL = userProfile?.photoURL || null;
@@ -311,7 +312,7 @@ export default function ChallengeDetailModal({
     >
       <div className="min-h-full flex items-center justify-center p-4">
         <div
-          className="w-full max-w-sm overflow-hidden transition-all duration-300 ease-out"
+          className="relative w-full max-w-sm overflow-hidden transition-all duration-300 ease-out"
           style={{
             borderRadius: 28,
             background: 'linear-gradient(180deg, #1a1a1c, #121214)',
@@ -321,27 +322,30 @@ export default function ChallengeDetailModal({
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Hero — gold "Challenge Details" header (matches the trophy-case
-              aesthetic from FriendProfileCard) + status pill + optional flavor title.
-              The aurora is gold rather than the category color so the modal feels
-              like a "card you opened from your trophy shelf" instead of a generic
-              category-tinted panel. */}
+          {/* Category glow (Felipe's option A): a soft wash of the challenge's colour at the
+              top of the sheet. The header, the Live dot and the "Match this" row carry the
+              same colour; buttons, VS, record and streak stay neutral/gold. */}
+          <div
+            className="absolute left-0 right-0 top-0 pointer-events-none"
+            style={{ height: 260, background: `radial-gradient(ellipse 85% 62% at 50% 0%, rgba(${rgb},0.24) 0%, rgba(${rgb},0.07) 42%, transparent 74%)` }}
+          />
+          {/* Hero: category icon + caps label, status pill, optional flavor title. */}
           <div className="relative pb-3 px-5 text-center" style={{ paddingTop: 22 }}>
             <div className="relative flex flex-col items-center">
               {/* The category as an icon + caps label ("CARDIO CHALLENGE") */}
               <div className="flex items-center gap-1.5 mb-2.5">
                 {CATEGORY_ICON[category] && <CategoryIcon category={CATEGORY_ICON[category]} size={14} />}
-                <p className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#aaa' }}>
+                <p className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color }}>
                   {CATEGORY_LABEL[category] ? `${CATEGORY_LABEL[category]} challenge` : 'Challenge'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {/* Neutral status pill; Live gets a small white dot */}
+                {/* Neutral status pill; Live gets a small dot in the category colour */}
                 <span
                   className="inline-flex items-center gap-1.5 rounded-full uppercase text-white"
                   style={{ padding: '3px 10px', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', backgroundColor: 'rgba(255,255,255,0.08)' }}
                 >
-                  {challenge.status === 'active' && <i className="block rounded-full" style={{ width: 6, height: 6, backgroundColor: '#fff', boxShadow: '0 0 6px rgba(255,255,255,0.8)' }} />}
+                  {challenge.status === 'active' && <i className="block rounded-full" style={{ width: 6, height: 6, backgroundColor: color, boxShadow: `0 0 7px rgba(${rgb},0.9)` }} />}
                   {status.label}
                 </span>
                 {countdownText && (
@@ -434,7 +438,7 @@ export default function ChallengeDetailModal({
               for the accepter's proof photo so the modal turns into a trophy view. */}
           <div className="px-4 pb-3">
             <SectionHeader label={accepterFulfillingPhotoURL ? 'The Proof' : 'Match This'} />
-            <div className="p-3 flex items-center gap-3" style={{ borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="p-3 flex items-center gap-3" style={{ borderRadius: 16, backgroundColor: `rgba(${rgb},0.08)`, boxShadow: `inset 0 0 0 1px rgba(${rgb},0.32)` }}>
               <ProofThumb
                 photoURL={accepterFulfillingPhotoURL}
                 fallbackIcon={

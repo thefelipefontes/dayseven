@@ -3,7 +3,7 @@ import { ImpactStyle } from '@capacitor/haptics';
 import CategoryIcon from './CategoryIcon';
 import { triggerHaptic } from '../utils/haptics';
 import {
-  BAR, TEXT_MUTED, TEXT_FAINT, CARD_BG_SOLID, WEEK_WON_GLOW,
+  BAR, TEXT_MUTED, CARD_BG_SOLID, WEEK_WON_GLOW, NUM, CHECK_BADGE_SIZE,
   hexToRgb, trackColor, doneGlow, goldMix,
 } from '../utils/designTokens';
 
@@ -35,7 +35,7 @@ const prefersReducedMotion = () => {
 };
 
 // Tinted circle with a check in the goal's colour — also used by Today's Activity.
-export const CheckBadge = ({ color, size = 20, ...rest }) => (
+export const CheckBadge = ({ color, size = CHECK_BADGE_SIZE, ...rest }) => (
   <span
     {...rest}
     className="inline-flex items-center justify-center rounded-full flex-shrink-0"
@@ -198,43 +198,43 @@ export default function WeekGoalsHero({ percent, daysLeft, rows }) {
   };
   const stepsShown = (r) => (inIntro ? r.total * easeOutCubic(clamp01((introT - plan.stepsAt) / STEPS_RUN)) : r.total);
 
-  const valueStyle = { fontSize: 30, fontWeight: 800, letterSpacing: '-0.8px', lineHeight: 0.9 };
-  const subStyle = { fontSize: 16, fontWeight: 700, color: TEXT_FAINT, letterSpacing: '-0.2px', marginLeft: 1 };
+  const valueStyle = NUM.value;
+  const subStyle = { ...NUM.valueSmall, marginLeft: 1 };
   const pressIn = (e) => { e.currentTarget.style.transform = 'scale(0.98)'; };
   const pressOut = (e) => { e.currentTarget.style.transform = 'scale(1)'; };
 
   return (
     <div ref={rootRef}>
       {/* Header: the week's % and the days left */}
-      <div className="flex items-end justify-between" style={{ marginBottom: 20, paddingBottom: 18, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="flex items-end justify-between" style={{ marginBottom: 18, paddingBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <div>
           <div
             data-week-number
             className="inline-block"
             style={{
-              fontSize: 60, fontWeight: 800, letterSpacing: '-3px', lineHeight: 0.8,
+              ...NUM.big, lineHeight: 0.8,
               color: goldMix(shownPercent),
               textShadow: showWon ? WEEK_WON_GLOW : 'none',
               transformOrigin: 'left bottom',
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {shownPercent}<span style={{ fontSize: 28, letterSpacing: '-1px', marginLeft: 3 }}>%</span>
+            {shownPercent}<span style={NUM.bigSmall}>%</span>
           </div>
           <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 12, color: showWon ? 'rgba(255,215,0,0.92)' : TEXT_MUTED }}>
             {showWon ? 'Week won' : 'Week progress'}
           </div>
         </div>
         <div className="text-right uppercase" style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', color: TEXT_MUTED }}>
-          <b className="block text-white normal-case" style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.8px', lineHeight: 1, marginBottom: 6 }}>{daysLeft}</b>
+          <b className="block text-white normal-case" style={{ ...NUM.value, marginBottom: 6 }}>{daysLeft}</b>
           {showWon
             ? (daysLeft === 1 ? 'day to spare' : 'days to spare')
             : (daysLeft === 1 ? 'day left' : 'days left')}
         </div>
       </div>
 
-      {/* One row per goal, 22px apart. Tapping a row opens its breakdown right under it. */}
-      <div className="flex flex-col" style={{ gap: 22 }}>
+      {/* One row per goal, 20px apart. Tapping a row opens its breakdown right under it. */}
+      <div className="flex flex-col" style={{ gap: 20 }}>
         {rows.map((r) => {
           const met = isMet(r);
           const rgbColor = r.color;
@@ -249,7 +249,7 @@ export default function WeekGoalsHero({ percent, daysLeft, rows }) {
               onMouseUp={pressOut}
               onMouseLeave={pressOut}
             >
-              <div className="flex items-end justify-between" style={{ marginBottom: 11 }}>
+              <div className="flex items-end justify-between" style={{ marginBottom: 10 }}>
                 <div className="flex items-center gap-2 min-w-0" style={{ fontSize: 15, fontWeight: 600, paddingBottom: 2 }}>
                   <CategoryIcon category={r.key} size={18} className="flex-shrink-0" />
                   <span>{r.label}</span>

@@ -7,7 +7,7 @@ import { toLocalDateStr } from './utils/dateHelpers';
 import { getActivityCategory } from './utils/activityCategory';
 import { hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
 import { CheckBadge } from './components/WeekGoalsHero';
-import { BAR, CARD_SURFACE, CARD_BG_SOLID, TEXT_MUTED, TEXT_FAINT, hexToRgb, trackColor, doneGlow } from './utils/designTokens';
+import { BAR, CARD_SURFACE, CARD_BG_SOLID, TEXT_MUTED, NUM, hexToRgb, trackColor, doneGlow } from './utils/designTokens';
 
 // ---------------------------------------------------------------------------
 // Weekly Planner
@@ -797,8 +797,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           a big "done/placed" number, one block per planned session in its colour, the week's
           steps as one bar with the pace notch, then what's up next. */}
       {asPage && (placedTotal > 0 || showSteps) && (() => {
-        const bigStyle = { fontWeight: 800, lineHeight: 1, display: 'flex', alignItems: 'baseline', fontVariantNumeric: 'tabular-nums' };
-        const smallStyle = { fontWeight: 700, color: TEXT_FAINT, letterSpacing: 0, marginLeft: 2 };
+        const rowStyle = { display: 'flex', alignItems: 'baseline', fontVariantNumeric: 'tabular-nums' };
         const capsStyle = { fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: TEXT_MUTED };
         const stepsHit = weekStepsTotal >= weekStepsGoal;
         const stepsColor = '#BF5AF2';
@@ -807,11 +806,11 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           {placedTotal > 0 && (<>
           <div className="flex items-end justify-between" style={{ paddingBottom: 16, marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <div>
-              <div style={{ ...bigStyle, fontSize: 44, letterSpacing: '-2px' }}>{doneTotal}<small style={{ ...smallStyle, fontSize: 22 }}>/{placedTotal}</small></div>
+              <div style={{ ...rowStyle, ...NUM.big, lineHeight: 1 }}>{doneTotal}<small style={{ ...NUM.bigSmall, fontWeight: 700, color: '#666' }}>/{placedTotal}</small></div>
               <div style={{ ...capsStyle, marginTop: 9 }}>Planned sessions done</div>
             </div>
             <div className="text-right">
-              <div style={{ ...bigStyle, fontSize: 28, letterSpacing: '-0.8px', justifyContent: 'flex-end' }}>{daysLeft}</div>
+              <div style={{ ...rowStyle, ...NUM.value, justifyContent: 'flex-end' }}>{daysLeft}</div>
               <div style={{ ...capsStyle, marginTop: 7 }}>{daysLeft === 1 ? 'Day left' : 'Days left'}</div>
             </div>
           </div>
@@ -829,7 +828,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                 <span>Steps</span>
                 {stepsHit && <CheckBadge color={stepsColor} />}
               </div>
-              <div style={{ ...bigStyle, fontSize: 22, letterSpacing: '-0.5px' }}>{fmtK(weekStepsTotal)}<small style={{ ...smallStyle, fontSize: 14 }}>/{fmtK(weekStepsGoal)}</small></div>
+              <div style={{ ...rowStyle, ...NUM.value }}>{fmtK(weekStepsTotal)}<small style={{ ...NUM.valueSmall, marginLeft: 1 }}>/{fmtK(weekStepsGoal)}</small></div>
             </div>
             <div className="relative" style={{ height: BAR.height, borderRadius: BAR.radius, backgroundColor: trackColor(stepsColor) }}>
               <i className="absolute left-0 top-0 bottom-0 block" style={{ width: `${Math.min(100, (weekStepsTotal / weekStepsGoal) * 100)}%`, borderRadius: BAR.radius, backgroundColor: stepsColor, boxShadow: stepsHit ? doneGlow(stepsColor) : 'none' }} />

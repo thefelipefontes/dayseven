@@ -35,6 +35,20 @@ export const goldMix = (pct) => {
 };
 export const WEEK_WON_GLOW = `0 0 22px rgba(${GOLD_RGB},0.45)`;
 
+// Number sizes — Felipe's pick "One big number" (Nov 2026, mock-home-light.html .ns-B): each
+// screen keeps ONE big number (Home's week %, Plan's done/placed, Profile's winning streak);
+// every other number drops to text size. Read these instead of hard-coding sizes.
+export const NUM = {
+  big: { fontSize: 46, fontWeight: 800, letterSpacing: '-2.2px' },           // the one big number
+  bigSmall: { fontSize: 22, letterSpacing: '-0.6px', marginLeft: 2 },        // its "%", "/7", "weeks"
+  value: { fontSize: 17, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1 }, // every other number
+  valueSmall: { fontSize: 13, fontWeight: 600, color: '#666' },              // its "/goal" part
+  mini: { fontSize: 15, fontWeight: 800, letterSpacing: '-0.3px' },          // one-line goal rows
+  miniSmall: { fontSize: 12, fontWeight: 700, color: '#666' },
+};
+// The check badge on a finished goal.
+export const CHECK_BADGE_SIZE = 18;
+
 // Card surface: a faint top-lit gradient with a hairline edge.
 export const CARD_RADIUS = 22;
 export const CARD_SURFACE = {

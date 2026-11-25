@@ -19528,7 +19528,10 @@ export default function DaySevenApp() {
         // Hold off on celebrations while the Challenge a friend modal is up — playing them
         // simultaneously buries the modal. Once the user dismisses the modal (or sends),
         // `challengeModalActivity` flips to null and the overlay animates in.
-        show={showCelebration && !challengeModalActivity}
+        // Also held while the activity stamp (z-index 9999) is open after a timed workout:
+        // the save that opens the stamp is what fires these, and they'd otherwise play
+        // hidden underneath it. They animate in once the stamp closes.
+        show={showCelebration && !challengeModalActivity && !showStampModal}
         message={celebrationMessage}
         type={celebrationType}
         onComplete={() => {
@@ -19546,9 +19549,9 @@ export default function DaySevenApp() {
         }}
       />
 
-      <SectionErrorBoundary name="weekCelebration" variant="modal" open={showWeekStreakCelebration && !challengeModalActivity} onClose={() => setShowWeekStreakCelebration(false)}>
+      <SectionErrorBoundary name="weekCelebration" variant="modal" open={showWeekStreakCelebration && !challengeModalActivity && !showStampModal} onClose={() => setShowWeekStreakCelebration(false)}>
       <WeekStreakCelebration
-        show={showWeekStreakCelebration && !challengeModalActivity}
+        show={showWeekStreakCelebration && !challengeModalActivity && !showStampModal}
         streakCount={userData?.streaks?.master || 1}
         goals={userData?.goals || {}}
         // Only while the celebration shows (same reasoning as ShareModal's stats).
@@ -19650,7 +19653,7 @@ export default function DaySevenApp() {
       <Toast
         // Same deferral as the celebration overlays — record toasts and any other queued
         // success toast wait for the Challenge a friend modal to close before appearing.
-        show={showToast && !challengeModalActivity}
+        show={showToast && !challengeModalActivity && !showStampModal}
         message={toastMessage}
         onDismiss={() => setShowToast(false)}
         onTap={toastType === 'record' ? navigateToHallOfFame : null}

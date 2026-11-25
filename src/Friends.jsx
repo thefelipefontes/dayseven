@@ -1,5 +1,6 @@
 import AvatarImage from './components/AvatarImage';
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
   searchUsers,
@@ -13,6 +14,7 @@ import {
 } from './services/friendService';
 import FriendProfileCard from './components/FriendProfileCard';
 import { isDemoAccount, getDemoFriends, getDemoFriendRequests, getDemoSentRequests } from './demoData';
+import { resolveUnit } from './utils/distance';
 
 // Haptic helper
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -53,6 +55,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
   const [justSent, setJustSent] = useState(new Set()); // Track recently sent requests for animation
   const [isClosing, setIsClosing] = useState(false); // Track closing animation
   const [selectedProfile, setSelectedProfile] = useState(null); // Track selected user profile to view
+  const [friendToRemove, setFriendToRemove] = useState(null); // asks before removing a friend
 
   const handleClose = () => {
     setIsClosing(true);
@@ -419,7 +422,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
                           onProfileClick={setSelectedProfile}
                           rightContent={
                             <ActionButton
-                              onClick={() => handleRemoveFriend(friend.uid)}
+                              onClick={() => setFriendToRemove(friend)}
                               className="text-red-400 text-sm px-3 py-1 rounded-full hover:bg-red-400/10"
                             >
                               Remove
@@ -697,6 +700,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
         <FriendProfileCard
           friend={selectedProfile}
           onClose={() => setSelectedProfile(null)}
+          distanceUnit={resolveUnit(userProfile)}
           statsVisible={isFriend(selectedProfile.uid)}
           actions={(() => {
             const closeAfter = (fn) => () => { fn?.(); setSelectedProfile(null); };
@@ -713,7 +717,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
                     </button>
                   )}
                   <button
-                    onClick={closeAfter(() => handleRemoveFriend(selectedProfile.uid))}
+                    onClick={closeAfter(() => setFriendToRemove(selectedProfile))}
                     className="w-full py-3 rounded-full font-medium transition-all duration-150 active:scale-95 text-red-400"
                     style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
                   >
@@ -770,6 +774,45 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
             );
           })()}
         />
+      )}
+
+      {/* Confirm before removing a friend */}
+      {friendToRemove && createPortal(
+        <div data-modal-overlay className="fixed inset-0 z-[9999] flex items-end justify-center" onClick={() => setFriendToRemove(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-md rounded-t-2xl p-5 text-center"
+            style={{ backgroundColor: '#1a1a1a', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-white font-semibold text-[17px]">
+              Remove {friendToRemove.displayName?.split(' ')[0] || friendToRemove.username || 'this friend'}?
+            </h3>
+            <p className="text-gray-400 text-[13px] mt-1.5 mb-4 leading-snug">
+              You'll stop seeing each other's activity. You can add them again later.
+            </p>
+            <button
+              onClick={() => {
+                const uid = friendToRemove.uid;
+                setFriendToRemove(null);
+                triggerHaptic(ImpactStyle.Medium);
+                handleRemoveFriend(uid);
+              }}
+              className="w-full py-3 rounded-xl text-sm font-semibold"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#FF6B5E' }}
+            >
+              Remove
+            </button>
+            <button
+              onClick={() => setFriendToRemove(null)}
+              className="w-full py-3 mt-2 rounded-xl text-sm font-semibold text-white"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

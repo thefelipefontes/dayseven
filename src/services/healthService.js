@@ -898,6 +898,19 @@ export async function openHealthSettings() {
   }
 }
 
+// Open DaySeven's own page in iOS Settings (notifications, location, etc.). Reuses the
+// HealthKitWriter plugin's opener with target 'app'; falls back to the Health app only if
+// the Settings URL won't open.
+export async function openAppSettings() {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const result = await HealthKitWriter.openHealthSettings({ target: 'app' });
+    return !!result?.opened;
+  } catch (error) {
+    return false;
+  }
+}
+
 // Best-effort read of whether Health is actually connected.
 //
 // iOS never reveals READ authorization status — by design, since "we have no

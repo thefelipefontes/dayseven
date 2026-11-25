@@ -9,6 +9,7 @@ import { Capacitor } from '@capacitor/core';
 import { checkUsernameAvailable } from './services/userService';
 import { getHealthConnectionStatus, openHealthSettings } from './services/healthService';
 import { isSundayToday, formatApplyOn } from './utils/goalsSchedule';
+import { APP_VERSION, APP_BUILD } from './utils/appVersion';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -2148,7 +2149,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
             </button>
             <div className="flex items-center justify-between py-2 border-t border-zinc-700/50 mt-2">
               <span className="text-sm text-gray-400">Version</span>
-              <span className="text-sm text-white">1.0.0</span>
+              <span className="text-sm text-white">{APP_VERSION ? `${APP_VERSION}${APP_BUILD ? ` (${APP_BUILD})` : ''}` : '—'}</span>
             </div>
           </div>
         </div>

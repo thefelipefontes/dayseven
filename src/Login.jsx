@@ -354,10 +354,6 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
           <p className="mt-4 text-red-400 text-sm text-center">{error}</p>
         )}
 
-        {/* Footer */}
-        <p className="absolute bottom-8 text-gray-600 text-sm">
-          Your data stays on your device
-        </p>
       </div>
     );
   }

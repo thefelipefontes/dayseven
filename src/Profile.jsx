@@ -2061,7 +2061,7 @@ export default function ProfilePage(props) {
                   <CategoryIcon category="recovery" size={14} />
                   <span className="text-sm text-white">Recovery</span>
                   <span className="text-sm font-bold" style={{ color: '#00D1FF' }}>{totalsData.recovery}</span>
-                  <span className="text-xs text-gray-400">sessions</span>
+                  <span className="text-xs text-gray-400">{totalsData.recovery === 1 ? 'session' : 'sessions'}</span>
                 </div>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
               </div>
@@ -2196,7 +2196,7 @@ export default function ProfilePage(props) {
                       <div>
                         <div className="text-xs text-gray-500">Longest Winning Streak</div>
                         <div className="text-2xl font-black text-white">
-                          {records.longestMasterStreak ? `${records.longestMasterStreak} weeks` : '—'}
+                          {records.longestMasterStreak ? `${records.longestMasterStreak} ${records.longestMasterStreak === 1 ? 'week' : 'weeks'}` : '—'}
                         </div>
                       </div>
                     </div>
@@ -2430,7 +2430,7 @@ export default function ProfilePage(props) {
 
           {/* Trends Sub-View */}
           {statsSubView === 'trends' && (
-            <TrendsView activities={visibleActivities} calendarData={calendarData} healthHistory={healthHistory} healthKitData={healthKitData} isPro={isPro} onPresentPaywall={onPresentPaywall} />
+            <TrendsView activities={visibleActivities} calendarData={calendarData} healthHistory={healthHistory} healthKitData={healthKitData} isPro={isPro} onPresentPaywall={onPresentPaywall} distanceUnit={distanceUnit} />
           )}
         </div>
       )}
@@ -3025,7 +3025,7 @@ export default function ProfilePage(props) {
                       <div className="mt-6 p-4 rounded-xl bg-zinc-900">
                         <div className="text-center mb-4">
                           <span className="text-2xl font-bold text-white">{daysBetween}</span>
-                          <span className="text-gray-400 text-sm ml-1">days apart</span>
+                          <span className="text-gray-400 text-sm ml-1">{daysBetween === 1 ? 'day apart' : 'days apart'}</span>
                         </div>
 
                         {/* Aggregate stats grid */}
@@ -3078,7 +3078,7 @@ export default function ProfilePage(props) {
                               <CategoryIcon category="recovery" size={15} />
                               <span className="text-sm text-white">Recovery</span>
                               <span className="text-sm font-bold" style={{ color: '#00D1FF' }}>{recoverySessions}</span>
-                              <span className="text-xs text-gray-400">sessions</span>
+                              <span className="text-xs text-gray-400">{recoverySessions === 1 ? 'session' : 'sessions'}</span>
                             </div>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
                           </div>
@@ -3137,7 +3137,7 @@ export default function ProfilePage(props) {
                             // Subtitle
                             ctx.fillStyle = '#00FF94';
                             ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, sans-serif';
-                            ctx.fillText(`${daysBetween} days apart`, width / 2, 65);
+                            ctx.fillText(`${daysBetween} ${daysBetween === 1 ? 'day' : 'days'} apart`, width / 2, 65);
 
                             // Before/After labels
                             ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, sans-serif';
@@ -3470,6 +3470,7 @@ export default function ProfilePage(props) {
         onDeleteActivity={onDeleteActivity}
         onSelectActivity={(activity) => setSelectedDayActivity(activity)}
         userData={userData}
+        distanceUnit={distanceUnit}
       />
 
       {/* Month Stats Modal */}

@@ -278,7 +278,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
               <div className="text-[10px] text-gray-400"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />{weeksData.stepsTracked && monthStepsGoal > 0 ? `of ${(monthStepsGoal / 1000).toFixed(0)}k steps` : 'Steps'}</div>
             </div>
           </div>
-          <div className="-mt-2 mb-4"><RecoveryBonusRow count={recoveryCount} suffix="sessions" /></div>
+          <div className="-mt-2 mb-4"><RecoveryBonusRow count={recoveryCount} suffix={recoveryCount === 1 ? 'session' : 'sessions'} /></div>
 
           {/* Month Totals */}
           <div className="mb-4">

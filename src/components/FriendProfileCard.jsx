@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { getUserProfile } from '../services/userService';
 import { friendStatus, FRIEND_STATUS } from '../utils/friendStatus';
 import ZoomablePhoto from './ZoomablePhoto';
+import { formatDistanceValue, formatPace as formatPaceForUnit, unitLabel } from '../utils/distance';
 
 /**
  * Shared friend profile card — opens as a centered-card modal from the Challenges tab,
@@ -35,7 +36,7 @@ const RecoveryBonusRow = ({ children }) => (
   </div>
 );
 
-export default function FriendProfileCard({ friend, onClose, actions = null, preloadedProfile = null, statsVisible = true }) {
+export default function FriendProfileCard({ friend, onClose, actions = null, preloadedProfile = null, statsVisible = true, distanceUnit = 'mi' }) {
   const [isAnimating, setIsAnimating] = useState(false);
   // When `preloadedProfile` is provided (e.g., the current user's own card — App already
   // has userProfile + userData loaded and live-subscribed), seed state with it and skip
@@ -135,14 +136,6 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   const highestCalories = recVal(records.highestCalories);
   const fastestPace = recVal(records.fastestPace);
   const mostMilesWeek = records.mostMilesWeek || 0;
-
-  const formatPace = (mins) => {
-    if (!mins || mins <= 0) return '—';
-    const total = Math.round(mins * 60); // whole seconds first, or 7.995 shows as "7:60"
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  };
 
   // Render via portal directly into document.body. This takes the modal out of #root's
   // DOM subtree entirely — touches inside the modal physically can't bubble up to #root
@@ -273,10 +266,10 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               className="rounded-xl p-2.5 mb-3 space-y-1.5"
               style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
             >
-              <BestRow icon="🏃" label="Longest Run" value={longestDistance ? `${longestDistance.toFixed(1)} mi` : '—'} />
+              <BestRow icon="🏃" label="Longest Run" value={longestDistance ? `${formatDistanceValue(longestDistance, distanceUnit, 1)} ${unitLabel(distanceUnit)}` : '—'} />
               <BestRow icon={<CategoryIcon category="calories" size={13} color="currentColor" />} label="Top Calorie Workout" value={highestCalories ? highestCalories.toLocaleString() : '—'} />
-              <BestRow icon="⚡" label="Fastest Pace" value={fastestPace ? `${formatPace(fastestPace)} /mi` : '—'} />
-              <BestRow icon="📍" label="Most Miles in a Week" value={mostMilesWeek ? `${mostMilesWeek.toFixed(1)} mi` : '—'} />
+              <BestRow icon="⚡" label="Fastest Pace" value={fastestPace ? formatPaceForUnit(fastestPace * 60, distanceUnit) : '—'} />
+              <BestRow icon="📍" label={distanceUnit === 'km' ? 'Most KM in a Week' : 'Most Miles in a Week'} value={mostMilesWeek ? `${formatDistanceValue(mostMilesWeek, distanceUnit, 1)} ${unitLabel(distanceUnit)}` : '—'} />
             </div>
 
             {/* Current Streaks — the three goals that win the week, then Recovery as a bonus row.

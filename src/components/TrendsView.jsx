@@ -6,8 +6,11 @@ import { triggerHaptic, ImpactStyle } from '../utils/haptics';
 import { parseLocalDate, toLocalDateStr } from '../utils/dateHelpers';
 import { getActivityCategory } from '../utils/activityCategory';
 import { manualCaloriesForDate, manualCaloriesInRange } from '../utils/calories';
+import { milesToDisplay, unitLabel } from '../utils/distance';
 
-const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, isPro, onPresentPaywall }) => {
+const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, isPro, onPresentPaywall, distanceUnit = 'mi' }) => {
+  // Distances are stored in miles; convert only for display (bar heights are ratios).
+  const dist = (miles) => milesToDisplay(miles, distanceUnit);
   const [metric, setMetric] = useState('calories');
   const [timeRange, setTimeRange] = useState('1M');
   const [selectedBar, setSelectedBar] = useState(null); // For detail view on click
@@ -340,7 +343,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   const metricConfig = {
     calories: { label: 'Calories', cat: 'calories', unit: 'cal', color: '#FF6B6B' },
     steps: { label: 'Steps', cat: 'steps', unit: 'steps', color: '#BF5AF2' },
-    miles: { label: 'Miles', icon: '📍', unit: 'mi', color: '#00FF94' }
+    miles: { label: distanceUnit === 'km' ? 'KM' : 'Miles', icon: '📍', unit: unitLabel(distanceUnit), color: '#00FF94' }
   };
 
   const config = metricConfig[metric] || metricConfig['calories'];
@@ -435,20 +438,20 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                 </div>
                 <div className="text-xl font-black text-white mt-1">
                   {metric === 'miles'
-                    ? activePoint.value.toFixed(1)
+                    ? dist(activePoint.value).toFixed(1)
                     : activePoint.value.toLocaleString()
                   } {config.unit}
                 </div>
                 {metric === 'miles' && activePoint.value > 0 && (
                   <div className="flex items-center justify-center gap-3 mt-1.5 text-[11px]">
                     {(activePoint.milesRan || 0) > 0 && (
-                      <span style={{ color: milesColors.ran }}>🏃 {activePoint.milesRan.toFixed(1)}</span>
+                      <span style={{ color: milesColors.ran }}>🏃 {dist(activePoint.milesRan).toFixed(1)}</span>
                     )}
                     {(activePoint.milesBiked || 0) > 0 && (
-                      <span style={{ color: milesColors.biked }}>🚴 {activePoint.milesBiked.toFixed(1)}</span>
+                      <span style={{ color: milesColors.biked }}>🚴 {dist(activePoint.milesBiked).toFixed(1)}</span>
                     )}
                     {(activePoint.milesWalked || 0) > 0 && (
-                      <span style={{ color: milesColors.walked }}>🚶 {activePoint.milesWalked.toFixed(1)}</span>
+                      <span style={{ color: milesColors.walked }}>🚶 {dist(activePoint.milesWalked).toFixed(1)}</span>
                     )}
                   </div>
                 )}
@@ -605,13 +608,13 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
               <div className="text-lg font-black" style={{ color: config.color }}>
-                {metric === 'miles' ? total.toFixed(1) : total.toLocaleString()}
+                {metric === 'miles' ? dist(total).toFixed(1) : total.toLocaleString()}
               </div>
               <div className="text-[10px] text-gray-400">Total</div>
             </div>
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
               <div className="text-lg font-black" style={{ color: config.color }}>
-                {metric === 'miles' ? avg.toFixed(1) : Math.round(avg).toLocaleString()}
+                {metric === 'miles' ? dist(avg).toFixed(1) : Math.round(avg).toLocaleString()}
               </div>
               <div className="text-[10px] text-gray-400">Average</div>
             </div>
@@ -711,8 +714,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                     <div className="text-[9px] text-gray-400">Calories</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-sm font-bold text-white">{dayMiles.toFixed(1)}</div>
-                    <div className="text-[9px] text-gray-400">Miles</div>
+                    <div className="text-sm font-bold text-white">{dist(dayMiles).toFixed(1)}</div>
+                    <div className="text-[9px] text-gray-400">{distanceUnit === 'km' ? 'KM' : 'Miles'}</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-sm font-bold text-white">{totalDuration}</div>
@@ -734,7 +737,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                         </div>
                         <div className="flex gap-3 mt-1 text-[10px] text-gray-400">
                           {activity.duration && <span>{activity.duration} min</span>}
-                          {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
+                          {activity.distance && <span>{dist(activity.distance).toFixed(2)} {unitLabel(distanceUnit)}</span>}
                           {activity.calories && <span>{activity.calories} cal</span>}
                           {activity.avgHr && <span>HR: {activity.avgHr}</span>}
                         </div>

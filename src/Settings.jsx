@@ -11,6 +11,14 @@ import { getHealthConnectionStatus, openHealthSettings } from './services/health
 import { isSundayToday, formatApplyOn } from './utils/goalsSchedule';
 import { APP_VERSION, APP_BUILD } from './utils/appVersion';
 
+// Nov 2026 redesign (mocks/mock-leftovers.html settings.new): caps section titles, sections on the card surface
+const SECTION_TITLE = { fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a' };
+const SECTION_CARD = {
+  borderRadius: 18,
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.035))',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)',
+};
+
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
   try {
@@ -776,8 +784,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
       <div className="px-4">
         {/* Profile Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">PROFILE</h3>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>PROFILE</h3>
+          <div className="p-4" style={SECTION_CARD}>
             {/* Hidden file inputs */}
             <input
               type="file"
@@ -934,7 +942,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* Community / Discord Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">COMMUNITY</h3>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>COMMUNITY</h3>
           <button
             onClick={() => {
               try { window.open('https://discord.gg/2gZdMU7WWA', '_blank'); } catch {}
@@ -1000,60 +1008,24 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* Share Your Wins Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">CELEBRATE</h3>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>CELEBRATE</h3>
           <button
             onClick={onShare}
-            className="w-full rounded-2xl p-4 transition-all duration-150"
-            style={{
-              background: 'linear-gradient(135deg, rgba(0,255,148,0.1) 0%, rgba(0,209,255,0.1) 100%)',
-              border: '1px solid rgba(0,255,148,0.2)',
-              transform: 'scale(1)'
-            }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.98)';
-              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.4)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.2)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.98)';
-              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.4)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.2)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.2)';
-            }}
+            className="w-full p-4 transition-all duration-150 active:scale-[0.98]"
+            style={SECTION_CARD}
           >
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}
+                className="flex items-center justify-center flex-shrink-0"
+                style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,215,0,0.1)' }}
               >
-                <span className="text-2xl">🏆</span>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFD700" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 9h-1a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-8a2 2 0 0 0 -2 -2h-1" /><path d="M12 14v-11" /><path d="M9 6l3 -3l3 3" /></svg>
               </div>
               <div className="flex-1 text-left">
                 <div className="text-white font-semibold mb-0.5">Share Your Wins</div>
                 <div className="text-gray-400 text-sm">Create a card to show off your streaks</div>
               </div>
-              <svg
-                className="w-5 h-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#00FF94"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                <polyline points="16 6 12 2 8 6" />
-                <line x1="12" y1="2" x2="12" y2="15" />
-              </svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
             </div>
           </button>
         </div>
@@ -1061,30 +1033,30 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
         {/* Goals Section */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold text-gray-400">WEEKLY GOALS</h3>
+            <h3 className="uppercase ml-0.5" style={SECTION_TITLE}>WEEKLY GOALS</h3>
             <button
               onClick={onEditGoals}
               className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
-              style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)', transform: 'scale(1)' }}
+              style={{ color: '#fff', backgroundColor: 'rgba(255,255,255,0.1)', transform: 'scale(1)' }}
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.92)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.16)';
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
               }}
               onMouseDown={(e) => {
                 e.currentTarget.style.transform = 'scale(0.92)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.16)';
               }}
               onMouseUp={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
               }}
             >
               {pendingGoals ? 'Edit queued' : 'Edit'}
@@ -1121,7 +1093,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               </button>
             </div>
           )}
-          <div className="rounded-2xl px-4 py-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          <div className="px-4 py-1.5" style={SECTION_CARD}>
             {Object.entries(goalLabels).map(([key, { label, category, suffix, format, sub, bonus }]) => {
               const current = userData?.goals?.[key] || 0;
               const queued = pendingGoals?.[key];
@@ -1162,12 +1134,12 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* Preferences Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">PREFERENCES</h3>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>PREFERENCES</h3>
+          <div className="p-4" style={SECTION_CARD}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(0,255,148,0.12)' }}>
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="#ddd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 6h18M6 12h12M10 18h4" />
                   </svg>
                 </div>
@@ -1196,7 +1168,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                       }}
                       className="px-3 py-1 rounded-full text-[12px] font-semibold transition-all duration-150"
                       style={{
-                        backgroundColor: active ? '#00FF94' : 'transparent',
+                        backgroundColor: active ? '#fff' : 'transparent',
                         color: active ? 'black' : '#aaa',
                         minWidth: 40,
                       }}
@@ -1212,8 +1184,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* Privacy Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">PRIVACY</h3>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>PRIVACY</h3>
+          <div className="p-4" style={SECTION_CARD}>
             {/* Activity Feed Toggle */}
             <div className="flex items-center justify-between py-2">
               <div className="flex items-center gap-3">
@@ -1234,13 +1206,13 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 }}
                 className="w-12 h-7 rounded-full transition-all duration-200 relative"
                 style={{
-                  backgroundColor: showInActivityFeed ? '#00FF94' : 'rgba(255,255,255,0.2)'
+                  backgroundColor: showInActivityFeed ? '#fff' : 'rgba(255,255,255,0.2)'
                 }}
               >
                 <div
-                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  className="absolute top-1 w-5 h-5 rounded-full shadow-md transition-all duration-200"
                   style={{
-                    left: showInActivityFeed ? '26px' : '4px'
+                    left: showInActivityFeed ? '26px' : '4px', backgroundColor: showInActivityFeed ? '#000' : '#fff'
                   }}
                 />
               </button>
@@ -1266,13 +1238,13 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 }}
                 className="w-12 h-7 rounded-full transition-all duration-200 relative"
                 style={{
-                  backgroundColor: showOnLeaderboard ? '#00FF94' : 'rgba(255,255,255,0.2)'
+                  backgroundColor: showOnLeaderboard ? '#fff' : 'rgba(255,255,255,0.2)'
                 }}
               >
                 <div
-                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  className="absolute top-1 w-5 h-5 rounded-full shadow-md transition-all duration-200"
                   style={{
-                    left: showOnLeaderboard ? '26px' : '4px'
+                    left: showOnLeaderboard ? '26px' : '4px', backgroundColor: showOnLeaderboard ? '#000' : '#fff'
                   }}
                 />
               </button>
@@ -1283,8 +1255,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* Vacation Mode Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">VACATION MODE</h3>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>VACATION MODE</h3>
+          <div className="p-4" style={SECTION_CARD}>
             <div className="flex items-center justify-between py-2">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
@@ -1317,13 +1289,13 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 }}
                 className="w-12 h-7 rounded-full transition-all duration-200 relative"
                 style={{
-                  backgroundColor: userData.vacationMode?.isActive ? '#00D1FF' : 'rgba(255,255,255,0.2)'
+                  backgroundColor: userData.vacationMode?.isActive ? '#fff' : 'rgba(255,255,255,0.2)'
                 }}
               >
                 <div
-                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  className="absolute top-1 w-5 h-5 rounded-full shadow-md transition-all duration-200"
                   style={{
-                    left: userData.vacationMode?.isActive ? '26px' : '4px'
+                    left: userData.vacationMode?.isActive ? '26px' : '4px', backgroundColor: userData.vacationMode?.isActive ? '#000' : '#fff'
                   }}
                 />
               </button>
@@ -1388,8 +1360,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* Injury Mode Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">INJURY MODE</h3>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>INJURY MODE</h3>
+          <div className="p-4" style={SECTION_CARD}>
             <div className="flex items-center justify-between py-2">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(167,139,250,0.12)' }}>
@@ -1424,13 +1396,13 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 }}
                 className="w-12 h-7 rounded-full transition-all duration-200 relative"
                 style={{
-                  backgroundColor: userData.injuryMode?.isActive ? '#A78BFA' : 'rgba(255,255,255,0.2)'
+                  backgroundColor: userData.injuryMode?.isActive ? '#fff' : 'rgba(255,255,255,0.2)'
                 }}
               >
                 <div
-                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  className="absolute top-1 w-5 h-5 rounded-full shadow-md transition-all duration-200"
                   style={{
-                    left: userData.injuryMode?.isActive ? '26px' : '4px'
+                    left: userData.injuryMode?.isActive ? '26px' : '4px', backgroundColor: userData.injuryMode?.isActive ? '#000' : '#fff'
                   }}
                 />
               </button>
@@ -1516,11 +1488,11 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* Streak Shield Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">STREAK SHIELD</h3>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>STREAK SHIELD</h3>
+          <div className="p-4" style={SECTION_CARD}>
             <div className="flex items-center gap-3 py-2">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                <span className="text-base">🛡️</span>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg>
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-1.5">
@@ -1549,17 +1521,21 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   color = '#FF9500';
                 } else if (isShieldedCurrent || (isShieldedPrevious && isRetroWindow)) {
                   label = isShieldedCurrent ? 'Active this week' : 'Held last week';
-                  color = '#00FF94';
+                  color = '#fff';
                 } else {
                   label = 'On, every week';
-                  color = '#00FF94';
+                  color = '#fff';
                 }
 
                 return (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                        {isPro ? (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
+                        ) : (
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                        )}
                         <span className="text-xs font-semibold" style={{ color }}>{label}</span>
                       </div>
                       {!isPro && (
@@ -1600,8 +1576,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
           return (
             <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-400 mb-3">CHALLENGES</h3>
-              <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+              <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>CHALLENGES</h3>
+              <div className="p-4" style={SECTION_CARD}>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <p className="text-2xl font-bold text-white">{wins}</p>
@@ -1629,8 +1605,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
         {/* Notifications Section - Only on native */}
         {Capacitor.isNativePlatform() && (
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-400 mb-3">NOTIFICATIONS</h3>
-            <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>NOTIFICATIONS</h3>
+            <div className="p-4" style={SECTION_CARD}>
               <button
                 onClick={onNotificationSettings}
                 className="w-full flex items-center justify-between py-2 transition-all duration-150"
@@ -1659,19 +1635,23 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
         {/* Subscription Section - Only on native */}
         {Capacitor.isNativePlatform() && (
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-400 mb-3">SUBSCRIPTION</h3>
-            <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>SUBSCRIPTION</h3>
+            <div className="p-4" style={SECTION_CARD}>
               {/* Status indicator */}
               <div className="flex items-center justify-between py-2 mb-1">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isPro ? 'rgba(0,255,148,0.1)' : 'rgba(255,149,0,0.1)' }}>
-                    <svg className="w-4 h-4" fill="none" stroke={isPro ? '#00FF94' : '#FF9500'} viewBox="0 0 24 24" strokeWidth={1.5}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isPro ? 'rgba(255,255,255,0.08)' : 'rgba(255,149,0,0.1)' }}>
+                    {isPro ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 6l4 6l5 -4l-2 10h-14l-2 -10l5 4z" /></svg>
+                    ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={1.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
                     </svg>
+                    )}
                   </div>
                   <div>
                     <span className="text-sm text-white block">{isPro ? 'DaySeven Pro' : 'DaySeven'}</span>
-                    <p className="text-[11px]" style={{ color: isPro ? '#00FF94' : '#aaa' }}>
+                    <p className="text-[11px]" style={{ color: '#aaa' }}>
                       {!isPro ? 'Free plan' : isLifetime ? 'Lifetime — yours forever' : 'Active'}
                     </p>
                   </div>
@@ -1732,8 +1712,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* Health Section */}
         <div className="mb-6" ref={healthSectionRef} style={{ scrollMarginTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">HEALTH</h3>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>HEALTH</h3>
+          <div className="p-4" style={SECTION_CARD}>
             {/* Apple Health access — a row, not a toggle. We can't re-present the
                 HealthKit sheet once the user has answered it, so the only honest
                 control is a link out to where the real toggles live. */}
@@ -1757,13 +1737,14 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                     </div>
                     <div className="text-left">
                       <span className="text-sm text-white block">Apple Health</span>
-                      <p className="text-[11px] text-gray-500">
+                      <p className="text-[11px] flex items-center gap-1" style={{ color: healthConnected ? '#fff' : '#6b7280' }}>
+                        {healthConnected && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>}
                         {healthConnected ? 'Connected' : 'Not connected — nothing will auto-log'}
                       </p>
                     </div>
                   </div>
                   {!healthConnected && (
-                    <span className="text-[13px] font-medium flex items-center gap-1" style={{ color: '#00FF94' }}>
+                    <span className="text-[13px] font-semibold flex items-center gap-1" style={{ color: '#fff' }}>
                       Open Health
                       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="9 18 15 12 9 6" />
@@ -1782,8 +1763,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
             {/* Smart Save Toggle */}
             <div className={`flex items-center justify-between py-2 ${healthConnected ? '' : 'opacity-40 pointer-events-none'}`}>
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-                  <svg className="w-4 h-4" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <svg className="w-4 h-4" fill="none" stroke="#ddd" viewBox="0 0 24 24" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                   </svg>
                 </div>
@@ -1812,14 +1793,14 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 }}
                 className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
                 style={{
-                  backgroundColor: smartSaveWalks && userProfile?.maxHeartRate ? '#00FF94' : 'rgba(255,255,255,0.2)',
+                  backgroundColor: smartSaveWalks && userProfile?.maxHeartRate ? '#fff' : 'rgba(255,255,255,0.2)',
                   opacity: userProfile?.maxHeartRate ? 1 : 0.4
                 }}
               >
                 <div
-                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  className="absolute top-1 w-5 h-5 rounded-full shadow-md transition-all duration-200"
                   style={{
-                    left: smartSaveWalks && userProfile?.maxHeartRate ? '26px' : '4px'
+                    left: smartSaveWalks && userProfile?.maxHeartRate ? '26px' : '4px', backgroundColor: smartSaveWalks && userProfile?.maxHeartRate ? '#000' : '#fff'
                   }}
                 />
               </button>
@@ -1873,11 +1854,11 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                     handlePrivacyToggle('autoLogStrength', !autoLogStrength);
                   }}
                   className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
-                  style={{ backgroundColor: autoLogStrength ? '#00FF94' : 'rgba(255,255,255,0.2)' }}
+                  style={{ backgroundColor: autoLogStrength ? '#fff' : 'rgba(255,255,255,0.2)' }}
                 >
                   <div
-                    className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
-                    style={{ left: autoLogStrength ? '26px' : '4px' }}
+                    className="absolute top-1 w-5 h-5 rounded-full shadow-md transition-all duration-200"
+                    style={{ left: autoLogStrength ? '26px' : '4px', backgroundColor: autoLogStrength ? '#000' : '#fff' }}
                   />
                 </button>
               </div>
@@ -1899,11 +1880,11 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                     handlePrivacyToggle('autoLogCardio', !autoLogCardio);
                   }}
                   className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
-                  style={{ backgroundColor: autoLogCardio ? '#FF9500' : 'rgba(255,255,255,0.2)' }}
+                  style={{ backgroundColor: autoLogCardio ? '#fff' : 'rgba(255,255,255,0.2)' }}
                 >
                   <div
-                    className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
-                    style={{ left: autoLogCardio ? '26px' : '4px' }}
+                    className="absolute top-1 w-5 h-5 rounded-full shadow-md transition-all duration-200"
+                    style={{ left: autoLogCardio ? '26px' : '4px', backgroundColor: autoLogCardio ? '#000' : '#fff' }}
                   />
                 </button>
               </div>
@@ -1925,11 +1906,11 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                     handlePrivacyToggle('autoLogRecovery', !autoLogRecovery);
                   }}
                   className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
-                  style={{ backgroundColor: autoLogRecovery ? '#00D1FF' : 'rgba(255,255,255,0.2)' }}
+                  style={{ backgroundColor: autoLogRecovery ? '#fff' : 'rgba(255,255,255,0.2)' }}
                 >
                   <div
-                    className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
-                    style={{ left: autoLogRecovery ? '26px' : '4px' }}
+                    className="absolute top-1 w-5 h-5 rounded-full shadow-md transition-all duration-200"
+                    style={{ left: autoLogRecovery ? '26px' : '4px', backgroundColor: autoLogRecovery ? '#000' : '#fff' }}
                   />
                 </button>
               </div>
@@ -1953,11 +1934,11 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   handlePrivacyToggle('showCaloriesOnHome', !showCaloriesOnHome);
                 }}
                 className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
-                style={{ backgroundColor: showCaloriesOnHome ? '#FF6B6B' : 'rgba(255,255,255,0.2)' }}
+                style={{ backgroundColor: showCaloriesOnHome ? '#fff' : 'rgba(255,255,255,0.2)' }}
               >
                 <div
-                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
-                  style={{ left: showCaloriesOnHome ? '26px' : '4px' }}
+                  className="absolute top-1 w-5 h-5 rounded-full shadow-md transition-all duration-200"
+                  style={{ left: showCaloriesOnHome ? '26px' : '4px', backgroundColor: showCaloriesOnHome ? '#000' : '#fff' }}
                 />
               </button>
             </div>
@@ -2064,8 +2045,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
         {/* Password & Security Section - Only shown for email/password users */}
         {isEmailPasswordUser && (
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-400 mb-3">SECURITY</h3>
-            <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>SECURITY</h3>
+            <div className="p-4" style={SECTION_CARD}>
               {/* Change Password */}
               <button
                 onClick={onChangePassword}
@@ -2078,8 +2059,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-                    <svg className="w-4 h-4" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={1.5}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                    <svg className="w-4 h-4" fill="none" stroke="#ddd" viewBox="0 0 24 24" strokeWidth={1.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
                     </svg>
                   </div>
@@ -2125,8 +2106,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* App Info Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">APP</h3>
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          <h3 className="uppercase mb-2.5 ml-0.5" style={SECTION_TITLE}>APP</h3>
+          <div className="p-4" style={SECTION_CARD}>
             <button
               onClick={onStartTour}
               className="w-full flex items-center justify-between py-2 transition-all duration-150"
@@ -2138,7 +2119,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
             >
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
                   <span className="text-base">🎯</span>
                 </div>
                 <span className="text-sm text-white">Take the Tour</span>
@@ -2240,8 +2221,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
           >
             {/* Header */}
             <div className="px-6 pt-6 pb-4 text-center border-b border-zinc-800">
-              <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}>
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="#ddd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                   <circle cx="12" cy="7" r="4" />
                 </svg>
@@ -2283,8 +2264,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                     e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                   }}
                 >
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#ddd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                       <circle cx="12" cy="13" r="4" />
                     </svg>

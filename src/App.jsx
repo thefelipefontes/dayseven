@@ -11511,9 +11511,12 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
 
         const renderPendingBanner = (workouts, isUncategorized) => {
           if (workouts.length === 0) return null;
-          const rgb = isUncategorized ? '255,200,0' : '0,255,148';
-          const hex = isUncategorized ? '#FFC800' : '#00FF94';
-          const emoji = isUncategorized ? '⚠️' : '📱';
+          // Card surface with a tile (Nov 2026 redesign, mocks/mock-leftovers.html home.new): a
+          // categorized workout gets its category tint and line icon, an uncategorized one an alert.
+          const first = workouts[0];
+          const bannerCat = isUncategorized ? null : getActivityCategory(first);
+          const bannerHex = bannerCat === 'cardio' ? '#FF9500' : bannerCat === 'recovery' ? '#00D1FF' : (bannerCat === 'lifting' || bannerCat === 'lifting+cardio') ? '#00FF94' : null;
+          const tileBg = workouts.length === 1 && bannerHex ? `rgba(${hexToRgb(bannerHex)},0.16)` : 'rgba(255,255,255,0.08)';
           const title = workouts.length === 1
             ? (isUncategorized ? `${workouts[0].appleWorkoutName || workouts[0].type} workout detected` : 'New workout detected')
             : (isUncategorized
@@ -11545,44 +11548,37 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                     openPending();
                   }
                 }}
-                className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150 cursor-pointer"
-                style={{ backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.3)` }}
-                onTouchStart={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.98)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
-                }}
-                onTouchEnd={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.98)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
+                className="w-full flex items-center gap-3 transition-all duration-150 cursor-pointer"
+                style={{ ...CARD_SURFACE, borderRadius: 18, padding: 12 }}
+                onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.98)'; }}
+                onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.98)'; }}
+                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
               >
-                <span className="text-lg">{emoji}</span>
-                <div className="flex-1 text-left">
-                  <div className="text-xs font-semibold" style={{ color: hex }}>
+                <div className="flex items-center justify-center flex-shrink-0" style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: tileBg }}>
+                  {isUncategorized ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ddd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 9v4" /><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z" /><path d="M12 16h.01" /></svg>
+                  ) : workouts.length === 1 && bannerHex ? (
+                    <ActivityIcon type={first.type} subtype={first.subtype} size={19} color={bannerHex} />
+                  ) : (
+                    <ActivityIcon type={first.type} subtype={first.subtype} size={19} color="#ddd" />
+                  )}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <div className="text-white truncate" style={{ fontSize: 13.5, fontWeight: 600 }}>
                     {title}
                   </div>
-                  <div className="text-[10px] text-gray-400">
+                  <div className="truncate" style={{ fontSize: 11.5, color: '#8a8a8a', marginTop: 1 }}>
                     {subtitle}
                   </div>
                 </div>
                 {workouts.length > 1 && (
-                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: hex, color: '#000' }}>
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#fff', color: '#000' }}>
                     {workouts.length}
                   </span>
                 )}
-                <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: `rgba(${rgb},0.2)`, color: hex }}>
+                <span className="flex-shrink-0 bg-white text-black" style={{ padding: '6px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700 }}>
                   {workouts.length === 1 ? 'Add' : 'View'}
                 </span>
                 <button

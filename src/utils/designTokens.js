@@ -45,6 +45,11 @@ export const NUM = {
   valueSmall: { fontSize: 13, fontWeight: 600, color: '#666' },              // its "/goal" part
   mini: { fontSize: 15, fontWeight: 800, letterSpacing: '-0.3px' },          // one-line goal rows
   miniSmall: { fontSize: 12, fontWeight: 700, color: '#666' },
+  // Smaller "one big number"s where space is short: onboarding's sticky linking header,
+  // and the lock screen's illustrative streak card.
+  bigCompact: { fontSize: 36, fontWeight: 800, letterSpacing: '-1.7px' },
+  bigCompactSmall: { fontSize: 17, letterSpacing: '-0.5px', marginLeft: 2 },
+  bigCard: { fontSize: 34, fontWeight: 800, letterSpacing: '-1.4px' },
 };
 // The check badge on a finished goal.
 export const CHECK_BADGE_SIZE = 18;

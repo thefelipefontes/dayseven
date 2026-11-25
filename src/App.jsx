@@ -31,7 +31,7 @@ import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_
 import RouteMapView, { ll2px, bestFit, snapshotBasemap } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
 import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoProfileOverride, getDemoHealthKitData, getDemoHealthHistory, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
-import { Dumbbell, Footprints } from 'lucide-react';
+import { Dumbbell } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import { clearFeedSnapshot } from './utils/feedSnapshot';
@@ -57,7 +57,7 @@ import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
 import CategoryIcon from './components/CategoryIcon';
 import WeekGoalsHero, { CheckBadge, Collapse } from './components/WeekGoalsHero';
-import { CATEGORY_COLORS, CARD_SURFACE, CARD_BG_SOLID, GOLD, TEXT_MUTED, NUM, hexToRgb } from './utils/designTokens';
+import { CATEGORY_COLORS, CARD_SURFACE, CARD_BG_SOLID, GOLD, TEXT_MUTED, NUM, goldMix, hexToRgb, TRACK_ALPHA } from './utils/designTokens';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
 import WeekStatsModal from './components/WeekStatsModal';
@@ -2976,619 +2976,258 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
   );
 };
 
-// Week Streak Celebration Modal - Animated ring convergence celebration
+// Week-won celebration — "Gold 100" (Nov 2026 redesign, mocks/mock-celebration.html ?v=B).
+// A poster-size week % counts up white → gold while compact goal rows light up underneath
+// (Home's Light up). At 100: a gold burst behind the number, a glow pop and a gold aurora, and
+// the label turns to "Week won · N days to spare". Then "🔥 N Week Winning Streak" with the
+// number rolling up from last week's, then Share my week / Close. Tap mid-way to skip to the
+// end, tap again to close. Under Reduce Motion it shows the final state straight away.
+const CELEB_T0 = 650;     // first block switches on
+const CELEB_STEP = 150;   // between blocks
+const CELEB_STEPS = 760;  // steps bar fill
+const celebReducedMotion = () => { try { return !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
+
 const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals = {}, weekCounts = {} }) => {
-  const [phase, setPhase] = useState('hidden'); // hidden, fadeIn, converge, burst, content, fadeOut
-  const [ringStates, setRingStates] = useState([
-    { animate: false, converged: false, hasAnimated: false },
-    { animate: false, converged: false, hasAnimated: false },
-    { animate: false, converged: false, hasAnimated: false }
-  ]); // Strength, Cardio, Recovery
-  const [showCheckmark, setShowCheckmark] = useState(false);
-  const [showParticles, setShowParticles] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false);
-  const [showContent, setShowContent] = useState(false);
-  const [particles, setParticles] = useState([]);
-  const [confetti, setConfetti] = useState([]);
+  const rootRef = useRef(null);
+  const [clock, setClock] = useState(null); // ms into the sequence; null = finished
+  const [closing, setClosing] = useState(false);
+  const animsRef = useRef([]);
+  const timersRef = useRef([]);
+  const rafRef = useRef(0);
 
-  const COLORS = {
-    strength: '#00FF94',
-    cardio: '#FF9500',
-    recovery: '#00D1FF'
-  };
+  // The goals as rows. The third goal is Steps, or Recovery for a week under the older rule.
+  const stepsGoal = (goals.stepsPerDay || 10000) * 7;
+  const rows = [
+    { key: 'lifts', label: 'Strength', color: '#00FF94', rgb: '0,255,148', done: weekCounts.strength || 0, goal: goals.liftsPerWeek || 3 },
+    { key: 'cardio', label: 'Cardio', color: '#FF9500', rgb: '255,149,0', done: weekCounts.cardio || 0, goal: goals.cardioPerWeek || 3 },
+    weekCounts.stepsRule
+      ? { key: 'steps', label: 'Steps', color: '#BF5AF2', rgb: '191,90,242', done: weekCounts.steps || 0, goal: stepsGoal, bar: true }
+      : { key: 'recovery', label: 'Recovery', color: '#00D1FF', rgb: '0,209,255', done: weekCounts.recovery || 0, goal: goals.recoveryPerWeek ?? 2 },
+  ];
+  const fk = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  const fmt = (r, n) => (r.bar ? fk(n) : String(n));
 
-  // Ring SVG component with CSS keyframe animation for stroke
-  // hasAnimated: ring already animated and should stay filled (no animation)
-  // animate: ring should start animating now
-  const AnimatedRing = ({ animate, hasAnimated, color, size, strokeWidth, scale = 1 }) => {
-    const radius = (size - strokeWidth) / 2;
-    const circumference = 2 * Math.PI * radius;
+  // The schedule (mock-celebration.html play('B')): blocks from 650ms, 150ms apart; the steps
+  // bar 80ms after the last block over 760ms; the win when it lands (~2.24s for 3 + 2).
+  const plan = useMemo(() => {
+    let k = 0;
+    const blocks = {};
+    rows.forEach((r) => {
+      if (r.bar) return;
+      const n = Math.max(1, r.goal);
+      blocks[r.key] = Array.from({ length: n }, () => CELEB_T0 + (k++) * CELEB_STEP);
+    });
+    const tS = CELEB_T0 + k * CELEB_STEP + 80;
+    const hasBar = rows.some((r) => r.bar);
+    const tWin = hasBar ? tS + CELEB_STEPS : tS + 300;
+    return { blocks, tS, tWin, end: tWin + 950 + 500 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
+  const { tWin } = plan;
+  const daysLeft = 7 - new Date().getDay();
+  const weekDates = (() => {
+    const f = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const s = new Date(); s.setDate(s.getDate() - s.getDay());
+    const e = new Date(s); e.setDate(s.getDate() + 6);
+    return `${f(s)} – ${f(e)}`;
+  })();
+  const newStreak = Math.max(1, streakCount);
+  const oldStreak = newStreak - 1;
 
-    // If already animated, show full ring without animation
-    // If animate is true but not yet animated, play the animation
-    // Otherwise show empty ring
-    const shouldAnimate = animate && !hasAnimated;
-    const isFilled = hasAnimated;
+  const clearAll = useCallback(() => {
+    animsRef.current.forEach((a) => { try { a.cancel(); } catch { /* already gone */ } });
+    animsRef.current = [];
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+    cancelAnimationFrame(rafRef.current);
+  }, []);
 
-    return (
-      <svg
-        width={size}
-        height={size}
-        style={{
-          overflow: 'visible',
-          transform: `scale(${scale})`,
-          transition: 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
-        }}
-      >
-        <defs>
-          <style>{`
-            @keyframes fillRing-${color.replace('#', '')} {
-              from {
-                stroke-dashoffset: ${circumference};
-              }
-              to {
-                stroke-dashoffset: 0;
-              }
-            }
-          `}</style>
-        </defs>
-        {/* Background ring (dim outline) */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="rgba(255,255,255,0.15)"
-          strokeWidth={strokeWidth}
-        />
-        {/* Animated progress ring */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={isFilled ? 0 : circumference}
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{
-            animation: shouldAnimate ? `fillRing-${color.replace('#', '')} 0.7s cubic-bezier(0.4, 0, 0.2, 1) forwards` : 'none',
-            filter: `drop-shadow(0 0 8px ${color})`
-          }}
-        />
-      </svg>
+  // Play the sequence each time it opens.
+  useLayoutEffect(() => {
+    if (!show) { setClosing(false); return undefined; }
+    if (celebReducedMotion() || !rootRef.current) { setClock(null); return undefined; }
+    const root = rootRef.current;
+    const q = (sel) => root.querySelector(sel);
+    const qa = (sel) => [...root.querySelectorAll(sel)];
+    const A = (el, kf, o) => { if (el?.animate) animsRef.current.push(el.animate(kf, o)); };
+    const noSh = '0 0 0 0 rgba(0,0,0,0)';
+    const enter = (cls, at) => qa(`[data-enter="${cls}"]`).forEach((el) => A(el, [{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'translateY(0)' }], { delay: at, duration: 440, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
+    const pop = (el, at) => A(el, [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.3)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { delay: at, duration: 420, easing: 'ease-out', fill: 'backwards' });
+
+    A(q('[data-celeb="veil"]'), [{ opacity: 0 }, { opacity: 1 }], { duration: 360, easing: 'ease-out', fill: 'backwards' });
+    enter('e1', 150); enter('e2', 240); enter('e3', 340);
+    rows.forEach((r) => {
+      if (r.bar) {
+        const fill = q(`[data-celeb-bar="${r.key}"]`);
+        A(fill, [{ width: '0%' }, { width: fill?.style.width || '100%' }], { delay: plan.tS, duration: CELEB_STEPS, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+        if (r.done >= r.goal) {
+          A(fill, [{ boxShadow: noSh }, { boxShadow: noSh, offset: (tWin - 60) / (tWin + 540) }, { boxShadow: `0 0 12px rgba(${r.rgb},.5)` }], { duration: tWin + 540, fill: 'backwards' });
+          pop(q(`[data-celeb-check="${r.key}"]`), tWin - 60);
+        }
+        return;
+      }
+      const times = plan.blocks[r.key];
+      const bloomAt = times[times.length - 1] + 280;
+      times.forEach((t, i) => {
+        const b = q(`[data-celeb-block="${r.key}-${i}"]`);
+        const lit = i < r.done;
+        if (r.done >= r.goal) A(b, [{ boxShadow: noSh }, { boxShadow: noSh, offset: bloomAt / (bloomAt + 600) }, { boxShadow: `0 0 12px rgba(${r.rgb},.5)` }], { duration: bloomAt + 600, fill: 'backwards' });
+        if (lit) A(b, [{ backgroundColor: `rgba(${r.rgb},.2)`, boxShadow: noSh }, { backgroundColor: '#fff', boxShadow: '0 0 16px 3px rgba(255,255,255,.85)', offset: 0.35 }, { backgroundColor: r.color, boxShadow: noSh }], { delay: t, duration: 460, easing: 'ease-out', fill: 'backwards' });
+      });
+      if (r.done >= r.goal) pop(q(`[data-celeb-check="${r.key}"]`), bloomAt);
+    });
+    // The win: the number pops and glows, the burst opens, the aurora comes up.
+    const big = q('[data-celeb="big"]');
+    A(big, [{ textShadow: '0 0 0 rgba(255,215,0,0)' }, { textShadow: '0 0 48px rgba(255,215,0,.85)', offset: 0.45 }, { textShadow: '0 0 34px rgba(255,215,0,.5)' }], { delay: tWin, duration: 900, fill: 'backwards' });
+    A(big, [{ transform: 'scale(1)' }, { transform: 'scale(1.06)', offset: 0.45 }, { transform: 'scale(1)' }], { delay: tWin, duration: 560, easing: 'ease-out', fill: 'backwards' });
+    A(q('[data-celeb="burst"]'), [{ opacity: 0, transform: 'scale(.4)' }, { opacity: 1, transform: 'scale(1.15)', offset: 0.45 }, { opacity: 1, transform: 'scale(1)' }], { delay: tWin, duration: 1000, easing: 'ease-out', fill: 'backwards' });
+    A(q('[data-celeb="aurora"]'), [{ opacity: 0 }, { opacity: 1 }], { delay: tWin, duration: 900, fill: 'backwards' });
+    // Then the streak, the roll, the buttons.
+    enter('e4', tWin + 300);
+    A(q('[data-celeb="odo"]'), [{ transform: 'translateY(0)' }, { transform: 'translateY(-50%)' }], { delay: tWin + 650, duration: 480, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+    A(q('[data-celeb="streak"]'), [{ textShadow: '0 0 18px rgba(255,215,0,.35)' }, { textShadow: '0 0 34px rgba(255,215,0,.9)', offset: 0.4 }, { textShadow: '0 0 18px rgba(255,215,0,.35)' }], { delay: tWin + 650, duration: 760 });
+    enter('e5', tWin + 950);
+
+    timersRef.current.push(
+      setTimeout(() => triggerHaptic(ImpactStyle.Heavy), tWin),
+      setTimeout(() => triggerHaptic(ImpactStyle.Medium), tWin + 650),
     );
-  };
-
-  // Generate particle burst (from center)
-  const generateParticles = useCallback(() => {
-    const newParticles = [];
-    const colors = [COLORS.strength, COLORS.cardio, COLORS.recovery, '#FFD700', '#FF453A', '#BF5AF2'];
-
-    for (let i = 0; i < 40; i++) {
-      const angle = (i / 40) * Math.PI * 2;
-      const velocity = 100 + Math.random() * 80;
-      newParticles.push({
-        id: i,
-        vx: Math.cos(angle) * velocity,
-        vy: Math.sin(angle) * velocity,
-        color: colors[i % colors.length],
-        size: 4 + Math.random() * 6,
-        rotation: Math.random() * 360,
-        isCircle: Math.random() > 0.5
-      });
-    }
-    setParticles(newParticles);
-  }, []);
-
-  // Generate confetti (falling from top)
-  const generateConfetti = useCallback(() => {
-    const newConfetti = [];
-    const colors = [COLORS.strength, COLORS.cardio, COLORS.recovery, '#FFD700', '#FF453A', '#BF5AF2', '#FFFFFF'];
-
-    for (let i = 0; i < 50; i++) {
-      newConfetti.push({
-        id: i,
-        x: Math.random() * 100, // percentage across screen
-        delay: Math.random() * 0.5,
-        duration: 2 + Math.random() * 1.5,
-        color: colors[i % colors.length],
-        size: 6 + Math.random() * 8,
-        rotation: Math.random() * 360,
-        isCircle: Math.random() > 0.6
-      });
-    }
-    setConfetti(newConfetti);
-  }, []);
-
-  // Track timeout IDs so we can cancel them on skip
-  const timeoutsRef = useRef([]);
-
-  const addTimeout = useCallback((fn, delay) => {
-    const id = setTimeout(fn, delay);
-    timeoutsRef.current.push(id);
-    return id;
-  }, []);
-
-  const clearAllTimeouts = useCallback(() => {
-    timeoutsRef.current.forEach(id => clearTimeout(id));
-    timeoutsRef.current = [];
-  }, []);
-
-  // Skip animation and jump to final content state
-  const skipToContent = useCallback(() => {
-    clearAllTimeouts();
-    setPhase('content');
-    setRingStates([
-      { animate: false, converged: true, hasAnimated: true },
-      { animate: false, converged: true, hasAnimated: true },
-      { animate: false, converged: true, hasAnimated: true }
-    ]);
-    setShowCheckmark(true);
-    setShowParticles(false); // Hide particles (they look glitchy when skipped)
-    setShowContent(true);
-    setShowConfetti(true);
-    generateConfetti();
-  }, [clearAllTimeouts, generateConfetti]);
-
-  const handleClose = useCallback(() => {
-    if (phase === 'fadeOut') return; // Prevent double-close
-    clearAllTimeouts();
-    setPhase('fadeOut');
-    setTimeout(onClose, 300);
-  }, [onClose, phase, clearAllTimeouts]);
-
-  const handleShare = useCallback(() => {
-    if (phase === 'fadeOut') return;
-    clearAllTimeouts();
-    setPhase('fadeOut');
-    setTimeout(onShare, 300);
-  }, [onShare, phase, clearAllTimeouts]);
-
-  // Handle tap on the overlay — skip animation or close
-  const handleOverlayTap = useCallback((e) => {
-    // Don't intercept button clicks
-    if (e.target.closest('button')) return;
-
-    if (phase === 'content') {
-      // Already showing content — close
-      handleClose();
-    } else if (phase !== 'hidden' && phase !== 'fadeOut') {
-      // Mid-animation — skip to content
-      skipToContent();
-    }
-  }, [phase, skipToContent, handleClose]);
-
-  // Animation sequence
-  useEffect(() => {
-    if (show && phase === 'hidden') {
-      setPhase('fadeIn');
-
-      // Phase 1: Fade in background, then converge rings one at a time
-      // Each ring fills (closes) as it moves to the center
-      addTimeout(() => {
-        setPhase('converge');
-
-        // First: Recovery ring (rightmost) - fills and moves to center as innermost
-        addTimeout(() => {
-          setRingStates(prev => [
-            prev[0],
-            prev[1],
-            { animate: true, converged: true, hasAnimated: false }
-          ]);
-          triggerHaptic(ImpactStyle.Light);
-          // Mark as animated after animation completes
-          addTimeout(() => {
-            setRingStates(prev => [
-              prev[0],
-              prev[1],
-              { ...prev[2], hasAnimated: true }
-            ]);
-          }, 700);
-        }, 100);
-
-        // Second: Cardio ring - fills and moves to center as middle ring
-        addTimeout(() => {
-          setRingStates(prev => [
-            prev[0],
-            { animate: true, converged: true, hasAnimated: false },
-            prev[2]
-          ]);
-          triggerHaptic(ImpactStyle.Light);
-          // Mark as animated after animation completes
-          addTimeout(() => {
-            setRingStates(prev => [
-              prev[0],
-              { ...prev[1], hasAnimated: true },
-              prev[2]
-            ]);
-          }, 700);
-        }, 900);
-
-        // Third: Strength ring - fills and moves to center as outermost ring
-        addTimeout(() => {
-          setRingStates(prev => [
-            { animate: true, converged: true, hasAnimated: false },
-            prev[1],
-            prev[2]
-          ]);
-          triggerHaptic(ImpactStyle.Heavy);
-          // Mark as animated after animation completes
-          addTimeout(() => {
-            setRingStates(prev => [
-              { ...prev[0], hasAnimated: true },
-              prev[1],
-              prev[2]
-            ]);
-          }, 700);
-        }, 1700);
-
-        // Phase 2: Show particle burst and checkmark
-        addTimeout(() => {
-          setPhase('burst');
-          setShowParticles(true);
-          generateParticles();
-          setShowCheckmark(true);
-          triggerHaptic(ImpactStyle.Medium);
-        }, 2500);
-
-        // Phase 3: Show content and confetti
-        addTimeout(() => {
-          setPhase('content');
-          setShowContent(true);
-          setShowConfetti(true);
-          generateConfetti();
-        }, 2900);
-
-      }, 300);
-    }
-  }, [show, phase, generateParticles, generateConfetti, addTimeout]);
-
-  // Cleanup timeouts on unmount
-  useEffect(() => {
-    return () => clearAllTimeouts();
-  }, [clearAllTimeouts]);
-
-  // Reset state when closed
-  useEffect(() => {
-    if (!show) {
-      setTimeout(() => {
-        setPhase('hidden');
-        setRingStates([
-          { animate: false, converged: false, hasAnimated: false },
-          { animate: false, converged: false, hasAnimated: false },
-          { animate: false, converged: false, hasAnimated: false }
-        ]);
-        setShowCheckmark(false);
-        setShowParticles(false);
-        setShowConfetti(false);
-        setShowContent(false);
-        setParticles([]);
-        setConfetti([]);
-      }, 300);
-    }
+    // One clock for the numbers.
+    const t0 = performance.now();
+    const tick = () => {
+      const t = performance.now() - t0;
+      if (t >= plan.end) { setClock(null); return; }
+      setClock(t);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    setClock(0);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => clearAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show]);
 
-  if (!show && phase === 'hidden') return null;
+  const skipToEnd = useCallback(() => { clearAll(); setClock(null); }, [clearAll]);
+  const finish = useCallback((cb) => {
+    if (closing) return;
+    clearAll();
+    setClosing(true);
+    setTimeout(cb, 300);
+  }, [closing, clearAll]);
+  const handleClose = useCallback(() => finish(onClose), [finish, onClose]);
+  const handleShare = useCallback(() => finish(onShare), [finish, onShare]);
+  const handleOverlayTap = useCallback((e) => {
+    if (e.target.closest('button')) return;
+    if (clock !== null) skipToEnd(); else handleClose();
+  }, [clock, skipToEnd, handleClose]);
+
+  if (!show) return null;
+
+  const inIntro = clock !== null;
+  const ease = (p) => 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 3);
+  const shownPct = inIntro ? Math.round(100 * ease((clock - CELEB_T0) / (tWin - CELEB_T0))) : 100;
+  const isWon = !inIntro || clock >= tWin;
+  const rowValue = (r) => {
+    if (!inIntro) return fmt(r, r.done);
+    if (r.bar) return fmt(r, r.done * ease((clock - plan.tS) / CELEB_STEPS));
+    const times = plan.blocks[r.key];
+    const lit = times.slice(0, Math.min(r.done, times.length)).filter((t) => clock >= t + 60).length;
+    return lit >= Math.min(r.done, times.length) ? fmt(r, r.done) : String(lit);
+  };
+  const caps = { fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8a8a8a' };
+  const goldCaps = { ...caps, color: 'rgba(255,215,0,0.92)' };
 
   return (
     <div
+      ref={rootRef}
       data-modal-overlay
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 overflow-hidden text-white"
       onClick={handleOverlayTap}
-      style={{
-        backgroundColor: 'rgba(0,0,0,0.95)',
-        opacity: phase === 'hidden' || phase === 'fadeOut' ? 0 : 1,
-        transition: 'opacity 0.3s ease-out'
-      }}
+      style={{ opacity: closing ? 0 : 1, transition: 'opacity 0.3s ease-out', fontVariantNumeric: 'tabular-nums' }}
     >
-      {/* Radial glow background */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: showContent
-            ? 'radial-gradient(circle at center, rgba(255,215,0,0.15) 0%, rgba(0,255,148,0.08) 40%, transparent 70%)'
-            : 'transparent',
-          transition: 'background 0.5s ease-out'
-        }}
-      />
+      {/* Home blurred and dimmed behind */}
+      <div data-celeb="veil" className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }} />
+      <div data-celeb="aurora" className="absolute pointer-events-none" style={{ left: '-30%', right: '-30%', top: '-8%', height: '62%', background: 'radial-gradient(ellipse 55% 50% at 50% 32%, rgba(255,215,0,0.17), rgba(255,215,0,0.05) 46%, rgba(255,215,0,0) 72%)' }} />
 
-      {/* Particle burst */}
-      {showParticles && (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {particles.map((particle) => (
-            <div
-              key={particle.id}
-              className="absolute"
-              style={{
-                left: '50%',
-                top: '40%',
-                width: particle.size,
-                height: particle.size,
-                borderRadius: particle.isCircle ? '50%' : '2px',
-                backgroundColor: particle.color,
-                transform: `translate(-50%, -50%) translate(${particle.vx}px, ${particle.vy}px) rotate(${particle.rotation}deg)`,
-                opacity: 0,
-                animation: 'particleBurst 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards'
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-6" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 44px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div data-enter="e1" style={{ ...caps, marginBottom: 26 }}>{weekDates}</div>
 
-      {/* Confetti falling from top */}
-      {showConfetti && (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {confetti.map((piece) => (
-            <div
-              key={piece.id}
-              className="absolute"
-              style={{
-                left: `${piece.x}%`,
-                top: '-20px',
-                width: piece.size,
-                height: piece.isCircle ? piece.size : piece.size * 0.6,
-                borderRadius: piece.isCircle ? '50%' : '2px',
-                backgroundColor: piece.color,
-                animation: `confettiFall ${piece.duration}s ease-out ${piece.delay}s forwards`,
-                transform: `rotate(${piece.rotation}deg)`
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Rings container */}
-      <div className="relative z-10 flex flex-col items-center">
-        {/* Ring animation area */}
-        <div
-          className="relative flex items-center justify-center mb-3"
-          style={{
-            width: 240,
-            height: 120,
-            transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            animation: showContent ? 'floatRings 3s ease-in-out infinite' : 'none'
-          }}
-        >
-          {/* Strength Ring (outer when converged) */}
+        {/* The poster number */}
+        <div data-enter="e2" className="relative flex flex-col items-center">
+          <div data-celeb="burst" className="absolute pointer-events-none rounded-full" style={{ left: '50%', top: '42%', width: 440, height: 440, margin: '-220px 0 0 -220px', background: 'radial-gradient(closest-side, rgba(255,215,0,0.3), rgba(255,215,0,0.08) 55%, rgba(255,215,0,0))' }} />
           <div
-            className="absolute"
-            style={{
-              transform: `translateX(${ringStates[0].converged ? 0 : -80}px)`,
-              transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              zIndex: 1
-            }}
+            data-celeb="big"
+            className="relative flex items-baseline"
+            style={{ fontSize: 116, fontWeight: 800, letterSpacing: '-6px', lineHeight: 0.85, color: isWon ? GOLD : goldMix(shownPct), textShadow: isWon ? '0 0 34px rgba(255,215,0,0.5)' : 'none' }}
           >
-            <AnimatedRing
-              animate={ringStates[0].animate}
-              hasAnimated={ringStates[0].hasAnimated}
-              color={COLORS.strength}
-              size={100}
-              strokeWidth={8}
-              scale={1}
-            />
+            {shownPct}<span style={{ fontSize: 50, letterSpacing: '-2px', marginLeft: 4 }}>%</span>
           </div>
-
-          {/* Cardio Ring (middle when converged) */}
-          <div
-            className="absolute"
-            style={{
-              transform: `translateX(0px)`,
-              transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              zIndex: 2
-            }}
-          >
-            <AnimatedRing
-              animate={ringStates[1].animate}
-              hasAnimated={ringStates[1].hasAnimated}
-              color={COLORS.cardio}
-              size={100}
-              strokeWidth={8}
-              scale={ringStates[1].converged ? 0.75 : 1}
-            />
+          <div className="relative" style={{ ...(isWon ? goldCaps : caps), marginTop: 18 }}>
+            {isWon ? `Week won · ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} to spare` : 'Week progress'}
           </div>
-
-          {/* Recovery Ring (inner when converged) */}
-          <div
-            className="absolute"
-            style={{
-              transform: `translateX(${ringStates[2].converged ? 0 : 80}px)`,
-              transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              zIndex: 3
-            }}
-          >
-            <AnimatedRing
-              animate={ringStates[2].animate}
-              hasAnimated={ringStates[2].hasAnimated}
-              color={weekCounts.stepsRule ? '#BF5AF2' : COLORS.recovery}
-              size={100}
-              strokeWidth={8}
-              scale={ringStates[2].converged ? 0.5 : 1}
-            />
-          </div>
-
-          {/* Checkmark */}
-          {showCheckmark && (
-            <div
-              className="absolute z-10 flex items-center justify-center"
-              style={{
-                animation: 'checkmarkPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'
-              }}
-            >
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M5 13l4 4L19 7"
-                  stroke="#00FF94"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{
-                    strokeDasharray: 24,
-                    strokeDashoffset: 24,
-                    animation: 'checkmarkDraw 0.4s ease-out 0.1s forwards',
-                    filter: 'drop-shadow(0 0 6px #00FF94)'
-                  }}
-                />
-              </svg>
-            </div>
-          )}
         </div>
 
-        {/* Content */}
-        <div
-          className="text-center"
-          style={{
-            opacity: showContent ? 1 : 0,
-            transform: showContent ? 'translateY(0)' : 'translateY(20px)',
-            transition: 'all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            animation: showContent ? 'floatContent 3.5s ease-in-out infinite 0.2s' : 'none'
-          }}
-        >
-          {/* Title */}
-          <div
-            className="text-3xl font-black mb-2"
-            style={{
-              background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}
-          >
-            Week Complete!
-          </div>
-
-          {/* Streak count */}
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <span className="text-2xl">🔥</span>
-            <span className="text-xl font-bold text-white">{streakCount} Week Winning Streak</span>
-          </div>
-
-          {/* Goals summary */}
-          <div className="flex items-center justify-center gap-6 mb-6">
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.strength, boxShadow: `0 0 8px ${COLORS.strength}` }} />
-              <span className="text-[11px] text-gray-400">Strength</span>
-              <span className="text-base font-bold" style={{ color: COLORS.strength }}>
-                {weekCounts.strength || 0}/{goals.liftsPerWeek || 3}
-              </span>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.cardio, boxShadow: `0 0 8px ${COLORS.cardio}` }} />
-              <span className="text-[11px] text-gray-400">Cardio</span>
-              <span className="text-base font-bold" style={{ color: COLORS.cardio }}>
-                {weekCounts.cardio || 0}/{goals.cardioPerWeek || 3}
-              </span>
-            </div>
-            {/* Third column is what this week's Winning Streak needed: Steps from the user's
-                start week (utils/weekGoals), Recovery before it. */}
-            {weekCounts.stepsRule ? (
-              <div className="flex flex-col items-center">
-                <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: '#BF5AF2', boxShadow: '0 0 8px #BF5AF2' }} />
-                <span className="text-[11px] text-gray-400">Steps</span>
-                <span className="text-base font-bold" style={{ color: '#BF5AF2' }}>
-                  {Math.round((weekCounts.steps || 0) / 1000)}k/{Math.round((goals.stepsPerDay || 10000) * 7 / 1000)}k
-                </span>
+        {/* Compact goal rows */}
+        <div data-enter="e3" className="w-full flex flex-col" style={{ gap: 16, marginTop: 36, maxWidth: 400 }}>
+          {rows.map((r) => {
+            const met = r.done >= r.goal;
+            return (
+              <div key={r.key}>
+                <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                  <div className="flex items-center" style={{ gap: 7, fontSize: 14, fontWeight: 600 }}>
+                    <CategoryIcon category={r.key} size={15} /><span>{r.label}</span>
+                  </div>
+                  <div className="flex items-baseline" style={NUM.value}>
+                    {rowValue(r)}<span style={{ ...NUM.valueSmall, marginLeft: 1 }}>/{fmt(r, r.goal)}</span>
+                    {met && (
+                      <span data-celeb-check={r.key} className="inline-flex items-center justify-center rounded-full" style={{ width: 17, height: 17, marginLeft: 7, alignSelf: 'center', backgroundColor: `rgba(${r.rgb},0.14)` }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={r.color} strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5l10 -10" /></svg>
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {r.bar ? (
+                  <div className="relative" style={{ height: 9, borderRadius: 4.5, backgroundColor: `rgba(${r.rgb},0.2)` }}>
+                    <div data-celeb-bar={r.key} className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.min(100, r.goal > 0 ? (r.done / r.goal) * 100 : 0)}%`, borderRadius: 4.5, backgroundColor: r.color, boxShadow: met ? `0 0 12px rgba(${r.rgb},0.5)` : 'none' }} />
+                  </div>
+                ) : (
+                  <div className="flex" style={{ gap: 5 }}>
+                    {Array.from({ length: Math.max(1, r.goal) }, (_, i) => (
+                      <div key={i} data-celeb-block={`${r.key}-${i}`} className="flex-1" style={{ height: 9, borderRadius: 4.5, backgroundColor: i < r.done ? r.color : `rgba(${r.rgb},0.2)`, boxShadow: met ? `0 0 12px rgba(${r.rgb},0.5)` : 'none' }} />
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="flex flex-col items-center">
-                <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.recovery, boxShadow: `0 0 8px ${COLORS.recovery}` }} />
-                <span className="text-[11px] text-gray-400">Recovery</span>
-                <span className="text-base font-bold" style={{ color: COLORS.recovery }}>
-                  {weekCounts.recovery || 0}/{goals.recoveryPerWeek ?? 2}
-                </span>
-              </div>
-            )}
-          </div>
+            );
+          })}
+        </div>
 
-          {/* Buttons */}
-          <div className="flex flex-col gap-3 w-64 mx-auto">
-            <button
-              onClick={handleShare}
-              className="w-full py-3 px-6 rounded-xl font-bold text-black transition-all active:scale-95"
-              style={{
-                background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
-                boxShadow: '0 4px 20px rgba(255, 215, 0, 0.4)'
-              }}
-            >
-              Share My Week
-            </button>
-            <button
-              onClick={handleClose}
-              className="w-full py-3 px-6 rounded-xl font-medium text-gray-400 transition-all active:scale-95"
-              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-            >
-              Close
-            </button>
-          </div>
+        {/* The Winning Streak, rolling up from last week's */}
+        <div data-enter="e4" className="flex items-center" style={{ gap: 12, marginTop: 26 }}>
+          <span style={{ fontSize: 28, lineHeight: 1 }}>🔥</span>
+          <span data-celeb="streak" style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-1.5px', lineHeight: 1, color: GOLD, textShadow: '0 0 18px rgba(255,215,0,0.35)' }}>
+            <span className="inline-block overflow-hidden align-bottom" style={{ height: '1.1em', lineHeight: 1.1 }}>
+              <span data-celeb="odo" className="flex flex-col" style={{ transform: 'translateY(-50%)' }}>
+                <span style={{ height: '1.1em' }}>{oldStreak}</span>
+                <span style={{ height: '1.1em' }}>{newStreak}</span>
+              </span>
+            </span>
+          </span>
+          <div style={{ ...goldCaps, lineHeight: 1.5 }}>Week Winning<br />Streak</div>
+        </div>
+
+        <div data-enter="e5" className="w-full flex flex-col" style={{ gap: 10, maxWidth: 340, marginTop: 30 }}>
+          <button onClick={handleShare} className="w-full rounded-2xl font-bold text-black active:opacity-80 transition-opacity" style={{ height: 52, fontSize: 17, backgroundColor: '#fff' }}>
+            Share my week
+          </button>
+          <button onClick={handleClose} className="w-full rounded-2xl font-semibold active:opacity-70 transition-opacity" style={{ height: 52, fontSize: 17, backgroundColor: 'rgba(255,255,255,0.06)', color: '#bbb' }}>
+            Close
+          </button>
         </div>
       </div>
-
-      {/* CSS Animations */}
-      <style>{`
-        @keyframes particleBurst {
-          0% {
-            transform: translate(-50%, -50%) translate(0, 0) rotate(0deg) scale(1);
-            opacity: 1;
-          }
-          100% {
-            transform: translate(-50%, -50%) translate(var(--vx, 0), var(--vy, 0)) rotate(360deg) scale(0);
-            opacity: 0;
-          }
-        }
-
-        @keyframes confettiFall {
-          0% {
-            transform: translateY(0) rotate(0deg);
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(100vh) rotate(720deg);
-            opacity: 0;
-          }
-        }
-
-        @keyframes checkmarkPop {
-          0% {
-            transform: scale(0);
-            opacity: 0;
-          }
-          50% {
-            transform: scale(1.2);
-          }
-          100% {
-            transform: scale(1);
-            opacity: 1;
-          }
-        }
-
-        @keyframes checkmarkDraw {
-          to {
-            stroke-dashoffset: 0;
-          }
-        }
-
-        @keyframes floatRings {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-4px);
-          }
-        }
-
-        @keyframes floatContent {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-3px);
-          }
-        }
-      `}</style>
     </div>
   );
 };
+
 
 // Share Modal
 const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChange, onMonthChange, isPro, onPresentPaywall, distanceUnit = 'mi' }) => {
@@ -4109,11 +3748,13 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
       glow: 'rgba(255, 215, 0, 0.15)',
       shadow: 'rgba(255, 215, 0, 0.25)'
     },
+    // White, not green (Nov 2026 redesign: green means Strength). The weekly card's own
+    // glow is gold, and only on a won week (shareWeekWon).
     weekly: {
-      primary: '#00FF94',
-      secondary: '#00D1FF',
-      glow: 'rgba(0, 255, 148, 0.15)',
-      shadow: 'rgba(0, 255, 148, 0.25)'
+      primary: '#FFFFFF',
+      secondary: '#BBBBBB',
+      glow: 'rgba(255, 255, 255, 0.08)',
+      shadow: 'rgba(0, 0, 0, 0.6)'
     },
     monthly: {
       primary: '#8B5CF6',
@@ -4124,6 +3765,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
   };
 
   const colors = colorSchemes[cardType];
+  // Whether the shared week was won (drives the weekly card's gold aurora and glow).
+  const shareWeekWon = !!(stats?.weekJudged?.all);
 
   // Helper to format pace
   const formatPace = (pace) => {
@@ -4251,7 +3894,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         const recoveryGoalMet = weekJudged.recovery;
         const allGoalsMet = weekJudged.all ?? (liftsGoalMet && cardioGoalMet && recoveryGoalMet);
 
-        // Calculate percentages for rings (cap at 100%)
+        // Each goal's share of the week (capped at 100%)
         const liftsPercent = liftsGoal > 0 ? Math.min((weeklyLifts / liftsGoal) * 100, 100) : 0;
         const cardioPercent = cardioGoal > 0 ? Math.min((weeklyCardio / cardioGoal) * 100, 100) : 0;
         const recoveryPercent = recoveryGoal > 0 ? Math.min((weeklyRecovery / recoveryGoal) * 100, 100) : 0;
@@ -4265,12 +3908,6 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
 
         // Overall progress, same as Home: the average completion of the three rings.
         const overallPercent = Math.round((liftsPercent + cardioPercent + third.percent) / 3);
-
-        // Ring dimensions for share card
-        const ringSize = isPostFormat ? 56 : 64;
-        const ringStroke = isPostFormat ? 5 : 5;
-        const ringRadius = (ringSize - ringStroke) / 2;
-        const ringCircumference = ringRadius * 2 * Math.PI;
 
         // Analyze weekly activities
         const weeklyAnalysis = analyzeWeeklyActivities(stats?.weeklyActivities);
@@ -4294,125 +3931,119 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
           achievements.push({ emoji: '⏱️', text: `${totalHrs} ${totalHrs === 1 ? 'hr' : 'hrs'} total` });
         }
 
-        // Slide 1: Progress
+        // Slide 1: the week, in Home's look (Nov 2026 redesign, mock-system-light.html shareNew):
+        // the week % as the one big number (white→gold, gold "100%" + WEEK WON when won), the
+        // goal rows as blocks and a steps bar, then Most frequent (won) or the streak on the line.
         if (weeklySlide === 0) {
+          const won = !!allGoalsMet;
+          // Days left only while the shared week is still running.
+          const todayStr = getTodayDate();
+          const rangeStart = weekRange?.startDate ? (weekRange.startDate instanceof Date ? toLocalDateStr(weekRange.startDate) : weekRange.startDate) : null;
+          const rangeEnd = weekRange?.endDate ? (weekRange.endDate instanceof Date ? toLocalDateStr(weekRange.endDate) : weekRange.endDate) : null;
+          const isCurrentWeek = !rangeStart || (rangeStart <= todayStr && (!rangeEnd || rangeEnd >= todayStr));
+          const daysLeftInWeek = 7 - new Date().getDay();
+          const capsStyle = { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#8a8a8a', marginTop: 8 };
+          const goldCaps = { ...capsStyle, color: 'rgba(255,215,0,0.9)' };
+          // Text-size numbers, scaled to the card (Home's 17px over 15px labels → 14 over 12.5)
+          const cardValue = { fontSize: 14, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1 };
+          const cardSmall = { fontSize: 10, fontWeight: 600, color: '#666', marginLeft: 1 };
+          const rows = [
+            { key: 'lifts', label: 'Strength', color: '#00FF94', done: weeklyLifts, goal: liftsGoal, met: liftsGoalMet },
+            { key: 'cardio', label: 'Cardio', color: '#FF9500', done: weeklyCardio, goal: cardioGoal, met: cardioGoalMet },
+            { key: 'steps', label: 'Steps', color: '#BF5AF2', done: weeklySteps, goal: weeklyStepsGoal, met: weeklySteps >= weeklyStepsGoal, steps: true },
+          ];
+          const fk = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+          const rgbOf = { lifts: '0,255,148', cardio: '255,149,0', steps: '191,90,242' };
+          const mostFrequent = [
+            (weeklyAnalysis?.topStrength || []).slice(0, 2).map(([name]) => name).join('/'),
+            weeklyAnalysis?.topCardio?.[0]?.[0],
+            weeklyAnalysis?.topRecovery?.[0]?.[0],
+          ].filter(Boolean);
+          const streakNow = stats?.streak || 0;
           return (
             <div
-              className={`relative h-full flex flex-col ${isPostFormat ? 'pt-4 pb-6 px-4' : 'py-5 px-5 justify-center'}`}
+              className="relative h-full flex flex-col justify-between"
+              style={{ padding: isPostFormat ? '18px 20px 14px' : '22px 20px 18px' }}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
-              {/* Main content wrapper */}
-              <div className={isPostFormat ? 'flex-1' : ''}>
-              {/* Header */}
-              <div className={`text-center ${isPostFormat ? '' : ''}`}>
-                <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
-                <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-500 uppercase tracking-wider mt-1.5`}>{getWeekDateRange()}</div>
-                <div className={`font-black ${isPostFormat ? 'text-2xl' : 'text-2xl'}`} style={{ color: allGoalsMet ? colors.primary : 'white' }}>
-                  {allGoalsMet ? 'Week Streaked!' : `${overallPercent}% Complete`}
-                </div>
-                <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-0.5`}>{getMotivationalTagline(stats?.streak || 0, allGoalsMet)}</div>
+              {/* Wordmark and the week */}
+              <div className="flex items-center justify-between">
+                <img src="/wordmark.png" alt="dayseven" style={{ height: 13, opacity: 0.8 }} />
+                <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', textTransform: 'uppercase' }}>{getWeekDateRange().replace(' - ', ' – ')}</span>
               </div>
 
-              {/* Content */}
-              <div className={`${isPostFormat ? 'flex-none py-2' : 'flex-none pt-3 pb-2'} flex flex-col justify-center`}>
-                {/* Progress bar */}
-                <div className={`w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
-                  <div className={`${isPostFormat ? 'h-2' : 'h-2'} rounded-full overflow-hidden flex`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    {liftsPercent > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${liftsPercent / 3}%`, backgroundColor: '#00FF94' }} />
-                    )}
-                    {cardioPercent > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${cardioPercent / 3}%`, backgroundColor: '#FF9500' }} />
-                    )}
-                    {third.percent > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${third.percent / 3}%`, backgroundColor: third.color }} />
-                    )}
+              {/* The week % — the card's one big number */}
+              <div className="flex items-end justify-between" style={{ paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                <div>
+                  <div className="flex items-baseline" style={{ fontSize: 50, fontWeight: 800, letterSpacing: '-2.6px', lineHeight: 0.8, color: won ? '#FFD700' : goldMix(overallPercent), textShadow: won ? '0 0 22px rgba(255,215,0,0.45)' : 'none' }}>
+                    {won ? 100 : overallPercent}<span style={{ fontSize: 22, letterSpacing: '-0.5px', marginLeft: 1 }}>%</span>
                   </div>
+                  <div style={won ? goldCaps : capsStyle}>{won ? 'Week won' : 'Week progress'}</div>
                 </div>
+                {won ? (
+                  <div className="text-right">
+                    <div style={{ ...cardValue, color: '#FFD700' }}>{streakNow}</div>
+                    <div style={goldCaps}>Week streak</div>
+                  </div>
+                ) : isCurrentWeek ? (
+                  <div className="text-right">
+                    <div style={cardValue}>{daysLeftInWeek}</div>
+                    <div style={capsStyle}>{daysLeftInWeek === 1 ? 'Day left' : 'Days left'}</div>
+                  </div>
+                ) : null}
+              </div>
 
-                {/* Goal Rings */}
-                <div className={`w-full flex items-center ${isPostFormat ? 'justify-center gap-6' : 'justify-around'} ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
-                  <div className="flex flex-col items-center text-center">
-                    <div className="relative">
-                      <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00FF94" strokeWidth={ringStroke} strokeLinecap="round"
-                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (liftsPercent / 100) * ringCircumference} />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyLifts}/{liftsGoal}</span>
+              {/* Goal rows: one block per session, a bar for steps, a check when done */}
+              <div className="flex flex-col" style={{ gap: 13 }}>
+                {rows.map((r) => (
+                  <div key={r.key}>
+                    <div className="flex items-end justify-between" style={{ marginBottom: 7 }}>
+                      <div className="flex items-center" style={{ gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+                        <CategoryIcon category={r.key} size={13} /><span>{r.label}</span>
+                      </div>
+                      <div className="flex items-baseline" style={cardValue}>
+                        {r.steps ? fk(r.done) : r.done}<span style={cardSmall}>/{r.steps ? fk(r.goal) : r.goal}</span>
+                        {r.met && (
+                          <span className="inline-flex items-center justify-center rounded-full" style={{ width: 15, height: 15, marginLeft: 5, alignSelf: 'center', backgroundColor: `rgba(${rgbOf[r.key]},0.14)` }}>
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={r.color} strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5l10 -10" /></svg>
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category="lifts" size={11} /><span>Strength</span></div>
-                  </div>
-                  <div className="flex flex-col items-center text-center">
-                    <div className="relative">
-                      <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#FF9500" strokeWidth={ringStroke} strokeLinecap="round"
-                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (cardioPercent / 100) * ringCircumference} />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyCardio}/{cardioGoal}</span>
+                    {r.steps ? (
+                      <div className="relative" style={{ height: 8, borderRadius: 4, backgroundColor: `rgba(${rgbOf[r.key]},0.2)` }}>
+                        <div className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.min(100, r.goal > 0 ? (r.done / r.goal) * 100 : 0)}%`, borderRadius: 4, backgroundColor: r.color, boxShadow: r.met ? `0 0 9px rgba(${rgbOf[r.key]},0.5)` : 'none' }} />
                       </div>
-                    </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category="cardio" size={11} /><span>Cardio</span></div>
-                  </div>
-                  <div className="flex flex-col items-center text-center">
-                    <div className="relative">
-                      <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke={third.color} strokeWidth={ringStroke} strokeLinecap="round"
-                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (third.percent / 100) * ringCircumference} />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{third.text}</span>
+                    ) : (
+                      <div className="flex" style={{ gap: 4 }}>
+                        {Array.from({ length: Math.max(1, r.goal) }, (_, i) => (
+                          <div key={i} className="flex-1" style={{ height: 8, borderRadius: 4, backgroundColor: i < r.done ? r.color : `rgba(${rgbOf[r.key]},0.2)`, boxShadow: r.met ? `0 0 9px rgba(${rgbOf[r.key]},0.5)` : 'none' }} />
+                        ))}
                       </div>
-                    </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category={third.category} size={11} /><span>{third.label}</span></div>
+                    )}
                   </div>
-                </div>
-
-                {/* Master Streak + Top Activities */}
-                <div className={`w-full ${isPostFormat ? 'py-2 px-3' : 'py-3 px-4'} rounded-2xl`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                  <div className="w-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                    <span className={isPostFormat ? 'text-lg' : 'text-xl'} style={{ lineHeight: '1.2' }}>🔥</span>
-                    <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#00FF94', lineHeight: '1.2' }}>{stats?.streak || 0}</span>
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`} style={{ lineHeight: '1.2' }}>week winning streak</span>
-                  </div>
-                  {(() => {
-                    const segments = [];
-                    const strengthNames = (weeklyAnalysis?.topStrength || []).slice(0, 2).map(([name]) => name);
-                    if (strengthNames.length > 0) segments.push({ text: strengthNames.join('/'), color: '#00FF94' });
-                    const topCardioName = weeklyAnalysis?.topCardio?.[0]?.[0];
-                    if (topCardioName) segments.push({ text: topCardioName, color: '#FF9500' });
-                    const topRecoveryName = weeklyAnalysis?.topRecovery?.[0]?.[0];
-                    if (topRecoveryName) segments.push({ text: topRecoveryName, color: '#00D1FF' });
-                    return segments.length > 0 && (
-                      <>
-                        <div className={`w-full h-px ${isPostFormat ? 'my-1.5' : 'my-2'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
-                        <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase tracking-wider text-center mb-1`}>Most Frequent</div>
-                        <div className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-center`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          {segments.map((seg, i) => (
-                            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              {i > 0 && <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>}
-                              <span style={{ color: seg.color }}>{seg.text}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
+                ))}
               </div>
 
-              {/* Footer */}
-              <div className="text-center mt-2">
-                <DaySevenLogo gradient={['#00FF94', '#00D1FF']} size="xs" />
-                <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Weekly Recap</div>
-              </div>
-              </div>
+              {/* Won: what the week was made of. Not won: the streak at stake. */}
+              {won ? (
+                mostFrequent.length > 0 ? (
+                  <div className="text-center" style={{ fontSize: 12.5, fontWeight: 600, color: '#ddd' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#8a8a8a', marginBottom: 6 }}>Most frequent</div>
+                    <div>{mostFrequent.map((t, i) => (<React.Fragment key={i}>{i > 0 && <span style={{ color: '#555' }}> · </span>}{t}</React.Fragment>))}</div>
+                  </div>
+                ) : <div />
+              ) : (isCurrentWeek ? (
+                <div className="flex items-center justify-center" style={{ gap: 7, padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', fontSize: 12, color: '#aaa' }}>
+                  <span>🔥</span>
+                  {streakNow > 0
+                    ? <span><b style={{ ...cardValue, color: '#FFD700' }}>{streakNow}</b>-week streak on the line</span>
+                    : <span>Win this week to start a streak</span>}
+                </div>
+              ) : <div />)}
+
+              <div className="text-center" style={{ fontSize: 8, fontWeight: 700, color: '#555', letterSpacing: '0.22em', textTransform: 'uppercase' }}>Weekly recap</div>
             </div>
           );
         }
@@ -4561,7 +4192,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
             <div className="flex-1 flex flex-col items-center justify-center w-full">
               {/* Main master streak number */}
               <div className="text-center">
-                <div className="font-black leading-none" style={{ fontSize: isPostFormat ? '3rem' : '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
+                {/* Gold: the winning streak's colour app-wide (Nov 2026 redesign) */}
+                <div className="font-black leading-none" style={{ fontSize: isPostFormat ? '3rem' : '4rem', color: GOLD, textShadow: '0 0 40px rgba(255,215,0,0.25), 0 0 80px rgba(255,215,0,0.12)', animation: 'ring-pulse 3s ease-in-out infinite' }}>
                   {stats?.streak || 0}
                 </div>
                 <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Winning Streak</div>
@@ -4863,17 +4495,23 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 : (isMobile ? 'scale(0.95)' : 'scale(1.1)'),
               transformOrigin: 'top center',
               background: 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
-              boxShadow: `0 25px 50px -12px ${colors.shadow}, 0 0 100px ${colors.glow}`
+              boxShadow: cardType === 'weekly'
+                ? (shareWeekWon ? '0 25px 50px -12px rgba(255,215,0,0.2), 0 0 100px rgba(255,215,0,0.08)' : '0 25px 50px -12px rgba(0,0,0,0.6)')
+                : `0 25px 50px -12px ${colors.shadow}, 0 0 100px ${colors.glow}`
             }}
           >
-            {/* Aurora/Glow Effect */}
+            {/* Aurora/Glow Effect — the weekly card's is a faint gold, and only on a won week */}
+            {(cardType !== 'weekly' || shareWeekWon) && (
             <div
               className="absolute top-0 left-0 right-0 h-1/2"
               style={{
-                background: `radial-gradient(ellipse 80% 50% at 50% 0%, ${colors.glow} 0%, ${colors.glow.replace('0.15', '0.05')} 40%, transparent 70%)`,
+                background: cardType === 'weekly'
+                  ? 'radial-gradient(ellipse 80% 45% at 50% 0%, rgba(255,215,0,0.13) 0%, rgba(255,215,0,0.04) 45%, transparent 72%)'
+                  : `radial-gradient(ellipse 80% 50% at 50% 0%, ${colors.glow} 0%, ${colors.glow.replace('0.15', '0.05')} 40%, transparent 70%)`,
                 pointerEvents: 'none'
               }}
             />
+            )}
 
           {/* Shimmer Effect */}
           <div
@@ -4907,9 +4545,9 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         {/* Weekly Slide Navigation */}
         {cardType === 'weekly' && (
           <div className="flex justify-center gap-2 mb-4">
-            <button onClick={() => setWeeklySlide(0)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => setWeeklySlide(1)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => setWeeklySlide(2)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(0)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? '#fff' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(1)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? '#fff' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(2)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? '#fff' : 'rgba(255,255,255,0.2)' }} />
           </div>
         )}
 
@@ -5238,44 +4876,37 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
     return data;
   };
 
-  // Mini activity rings component
-  const MiniRings = ({ size = 50 }) => {
-    const rings = [
-      { progress: weeklyProgress?.lifts ? Math.min(weeklyProgress.lifts.completed / weeklyProgress.lifts.goal, 1) : 0, color: '#00FF94', label: 'S' },
-      { progress: weeklyProgress?.cardio ? Math.min(weeklyProgress.cardio.completed / weeklyProgress.cardio.goal, 1) : 0, color: '#FF9500', label: 'C' },
-      // Third ring is the week's steps (one of the three goals that win the week); Recovery is a
-      // bonus and stays off the stamp. Falls back to Recovery only when no step data was passed.
-      weekSteps?.goal
-        ? { progress: Math.min(weekSteps.total / weekSteps.goal, 1), color: '#BF5AF2', label: 'St' }
-        : { progress: weeklyProgress?.recovery ? Math.min(weeklyProgress.recovery.completed / weeklyProgress.recovery.goal, 1) : 0, color: '#00D1FF', label: 'R' },
-    ];
-    const cx = size / 2, cy = size / 2;
-    const strokeWidth = 3.5;
-    const gap = 4.5;
-
+  // "This week" on the stamp (Nov 2026 redesign, mock-extras.html stampDark('A') /
+  // stampOverlay('new')): Strength and Cardio as one block per session, Steps as a bar —
+  // or Recovery in cyan when no step data was passed — plus the week % Home shows.
+  const stampWeekRows = [
+    { key: 'lifts', color: '#00FF94', rgb: '0,255,148', done: weeklyProgress?.lifts?.completed || 0, goal: weeklyProgress?.lifts?.goal || 0 },
+    { key: 'cardio', color: '#FF9500', rgb: '255,149,0', done: weeklyProgress?.cardio?.completed || 0, goal: weeklyProgress?.cardio?.goal || 0 },
+    weekSteps?.goal
+      ? { key: 'steps', color: '#BF5AF2', rgb: '191,90,242', done: weekSteps.total || 0, goal: weekSteps.goal, bar: true }
+      : { key: 'recovery', color: '#00D1FF', rgb: '0,209,255', done: weeklyProgress?.recovery?.completed || 0, goal: weeklyProgress?.recovery?.goal || 0 },
+  ];
+  const stampWeekPct = Math.round((stampWeekRows.reduce((sum, r) => sum + (r.goal > 0 ? Math.min(1, r.done / r.goal) : 1), 0) / stampWeekRows.length) * 100);
+  const stampTrack = (r, overlay) => {
+    const empty = overlay ? 'rgba(255,255,255,0.28)' : `rgba(${r.rgb},${TRACK_ALPHA})`;
+    if (r.bar) {
+      return (
+        <div style={{ position: 'relative', height: 5, borderRadius: 2.5, backgroundColor: empty }}>
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${r.goal > 0 ? Math.min(100, (r.done / r.goal) * 100) : 0}%`, borderRadius: 2.5, backgroundColor: r.color }} />
+        </div>
+      );
+    }
+    const met = r.goal > 0 && r.done >= r.goal;
     return (
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {rings.map((ring, i) => {
-          const r = (size / 2) - strokeWidth / 2 - i * gap;
-          const circumference = 2 * Math.PI * r;
-          const offset = circumference * (1 - ring.progress);
-          return (
-            <g key={i}>
-              <circle cx={cx} cy={cy} r={r} fill="none"
-                stroke={isTransparent ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)'}
-                strokeWidth={strokeWidth} />
-              <circle cx={cx} cy={cy} r={r} fill="none"
-                stroke={ring.color} strokeWidth={strokeWidth}
-                strokeDasharray={circumference} strokeDashoffset={offset}
-                strokeLinecap="round"
-                transform={`rotate(-90 ${cx} ${cy})`}
-                style={isTransparent ? { filter: `drop-shadow(0 0 3px ${ring.color})` } : {}} />
-            </g>
-          );
-        })}
-      </svg>
+      <div style={{ display: 'flex', gap: 2 }}>
+        {Array.from({ length: Math.max(1, r.goal) }, (_, i) => (
+          <div key={i} style={{ flex: 1, height: 5, borderRadius: 2.5, backgroundColor: i < r.done ? r.color : empty, boxShadow: met && !overlay ? `0 0 8px rgba(${r.rgb},0.5)` : 'none' }} />
+        ))}
+      </div>
     );
   };
+  const stampWeekValue = (r) => (r.bar ? fmtStampK(r.done) : r.done);
+  const stampWeekGoal = (r) => (r.bar ? fmtStampK(r.goal) : r.goal);
 
   // Image generation using html-to-image (faithful browser rendering via SVG foreignObject)
   const generateStampImage = async () => {
@@ -5633,41 +5264,21 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 )}
               </div>
 
-              {/* Mini rings + fractions row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <MiniRings size={32} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  {weeklyProgress?.lifts && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <Dumbbell size={10} color="#00FF94" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {weeklyProgress.lifts.completed}/{weeklyProgress.lifts.goal}
+              {/* This week: the week % and three short tracks, shadowed to read on any photo */}
+              <div style={{ marginBottom: 9 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff', textShadow: tShadow, marginBottom: 6 }}>
+                  <span style={{ color: goldMix(stampWeekPct), letterSpacing: 0, fontSize: 12, fontWeight: 800 }}>{stampWeekPct}%</span> this week
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {stampWeekRows.map((r) => (
+                    <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 6, filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.55))' }}>
+                      <CategoryIcon category={r.key} size={10} />
+                      <div style={{ width: 84 }}>{stampTrack(r, true)}</div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', textShadow: tShadow }}>
+                        {stampWeekValue(r)}<span style={{ fontSize: 8.5, fontWeight: 600, opacity: 0.75 }}>/{stampWeekGoal(r)}</span>
                       </span>
                     </div>
-                  )}
-                  {weeklyProgress?.cardio && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <IconRun size={10} color="#FF9500" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {weeklyProgress.cardio.completed}/{weeklyProgress.cardio.goal}
-                      </span>
-                    </div>
-                  )}
-                  {weekSteps?.goal ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <Footprints size={10} color="#BF5AF2" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {fmtStampK(weekSteps.total)}/{fmtStampK(weekSteps.goal)}
-                      </span>
-                    </div>
-                  ) : weeklyProgress?.recovery && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <IconSnowflake size={10} color="#00D1FF" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {weeklyProgress.recovery.completed}/{weeklyProgress.recovery.goal}
-                      </span>
-                    </div>
-                  )}
+                  ))}
                 </div>
               </div>
 
@@ -5697,7 +5308,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
               <div style={{
                 width: 30, height: 30, borderRadius: 8,
-                backgroundColor: `${categoryColor}15`,
+                backgroundColor: categoryColor.length === 7 ? `rgba(${hexToRgb(categoryColor)},0.16)` : 'rgba(255,255,255,0.08)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               }}>
@@ -5773,36 +5384,33 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
               <div style={{ display: 'flex', justifyContent: 'center', gap: 24 }}>
                 {hasDistance && pace > 0 && (
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {paceStr}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       /{distanceUnitLabel} pace
                     </div>
                   </div>
                 )}
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                     {durationStr}
                   </div>
                   <div style={{
-                    fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                    textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                    fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                   }}>
                     time
                   </div>
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {activity.calories}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       cal
                     </div>
@@ -5817,24 +5425,22 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 {/* Stats row — smaller, right under header */}
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: -4 }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {durationStr}
                     </div>
                     <div style={{
-                      fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       duration
                     </div>
                   </div>
                   {activity.calories > 0 && (
                     <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                         {activity.calories}
                       </div>
                       <div style={{
-                        fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                        textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
+                        fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                       }}>
                         cal
                       </div>
@@ -5888,12 +5494,11 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {activity.calories}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       calories
                     </div>
@@ -5919,12 +5524,11 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {activity.calories}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       calories
                     </div>
@@ -5952,52 +5556,21 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
             )}
           </div>
 
-          {/* Footer: Rings + Category fractions with icons (centered row) */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginTop: 'auto', paddingTop: isPost ? 12 : 0, gap: 10,
-          }}>
-            <MiniRings size={40} />
-            <div>
-              <div style={{
-                fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                textShadow: tShadow, letterSpacing: '0.3px', marginBottom: 2,
-              }}>
-                This week
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                {weeklyProgress?.lifts && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <Dumbbell size={11} color="#00FF94" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {weeklyProgress.lifts.completed}/{weeklyProgress.lifts.goal}
-                    </span>
-                  </div>
-                )}
-                {weeklyProgress?.cardio && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <IconRun size={11} color="#FF9500" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {weeklyProgress.cardio.completed}/{weeklyProgress.cardio.goal}
-                    </span>
-                  </div>
-                )}
-                {weekSteps?.goal ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <Footprints size={11} color="#BF5AF2" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {fmtStampK(weekSteps.total)}/{fmtStampK(weekSteps.goal)}
-                    </span>
-                  </div>
-                ) : weeklyProgress?.recovery && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <IconSnowflake size={11} color="#00D1FF" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {weeklyProgress.recovery.completed}/{weeklyProgress.recovery.goal}
-                    </span>
-                  </div>
-                )}
-              </div>
+          {/* Footer: "This week" — the week % and one short track per goal under a hairline */}
+          <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#8a8a8a' }}>This week</span>
+              <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.3px', color: goldMix(stampWeekPct) }}>
+                {stampWeekPct}<span style={{ fontSize: 9 }}>%</span>
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {stampWeekRows.map((r) => (
+                <div key={r.key} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <CategoryIcon category={r.key} size={10} />
+                  <div style={{ flex: 1 }}>{stampTrack(r, false)}</div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -6633,8 +6206,7 @@ const SmartSaveExplainModal = ({ onClose, onDisable }) => {
         <div className="space-y-3">
           <button
             onClick={onClose}
-            className="w-full py-3 rounded-xl font-semibold text-black"
-            style={{ backgroundColor: '#00FF94' }}
+            className="w-full py-3 rounded-xl font-semibold bg-white text-black active:bg-[#e5e5e5]"
           >
             Got It
           </button>
@@ -7398,7 +6970,7 @@ const DurationPicker = ({ hours, minutes, seconds = 0, onChange, disabled = fals
         style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
       {/* Selection highlight */}
       <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
-        style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+        style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }} />
       {/* Scrollable list */}
       <div
         ref={ref}
@@ -7413,7 +6985,7 @@ const DurationPicker = ({ hours, minutes, seconds = 0, onChange, disabled = fals
         {options.map((v) => (
           <div key={v} onClick={() => scrollToValue(ref, v)}
             className="flex items-center justify-center cursor-pointer transition-all duration-150"
-            style={{ height: itemHeight, color: value === v ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
+            style={{ height: itemHeight, color: value === v ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
             {formatFn(v)}
           </div>
         ))}
@@ -7514,7 +7086,7 @@ const MinutesPicker = ({ value, onChange, label = 'min' }) => {
         <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
           style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
         <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
-          style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+          style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }} />
         <div ref={ref} className="h-full overflow-y-scroll scrollbar-hide"
           style={{ scrollSnapType: 'none', WebkitOverflowScrolling: 'auto' }}
           onScroll={handleScroll}
@@ -7526,7 +7098,7 @@ const MinutesPicker = ({ value, onChange, label = 'min' }) => {
           {minuteOptions.map(v => (
             <div key={v} onClick={() => { if (ref.current) ref.current.scrollTo({ top: v * itemHeight, behavior: 'smooth' }); }}
               className="flex items-center justify-center cursor-pointer transition-all duration-150"
-              style={{ height: itemHeight, color: value === v ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
+              style={{ height: itemHeight, color: value === v ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
               {String(v).padStart(2, '0')}
             </div>
           ))}
@@ -7599,14 +7171,14 @@ const ScrollWheel = ({ options, value, onChange, format = (v) => v, width = 56 }
     <div className="relative" style={{ height: itemHeight * visibleItems, width }}>
       <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none" style={{ height: itemHeight, background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
       <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none" style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
-      <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg" style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+      <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg" style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }} />
       <div ref={ref} className="h-full overflow-y-scroll scrollbar-hide" style={{ scrollSnapType: 'none', WebkitOverflowScrolling: 'auto' }}
         onScroll={handleScroll} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
         <div style={{ height: itemHeight }} />
         {options.map((v) => (
           <div key={v} onClick={() => { if (ref.current) ref.current.scrollTo({ top: options.indexOf(v) * itemHeight, behavior: 'smooth' }); }}
             className="flex items-center justify-center cursor-pointer transition-all duration-150"
-            style={{ height: itemHeight, color: v === value ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: v === value ? 'bold' : 'normal', fontSize: v === value ? '18px' : '14px' }}>
+            style={{ height: itemHeight, color: v === value ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: v === value ? 'bold' : 'normal', fontSize: v === value ? '18px' : '14px' }}>
             {format(v)}
           </div>
         ))}
@@ -8429,7 +8001,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           setIsChangingActivityType(false);
         }}
         className="flex items-center gap-2 pl-3 pr-2 py-2 rounded-full transition-all duration-150 active:scale-95 cursor-pointer"
-        style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(0,255,148,0.2)' }}
+        style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}
         onTouchStart={(e) => {
           e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
           triggerHaptic(ImpactStyle.Light);
@@ -8745,12 +8317,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) ? 'rgba(255,255,255,0.3)' : '#fff', visibility: mode === null && !pendingActivity?.id ? 'hidden' : undefined }}
           disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) || (mode !== 'start' && date > getTodayDate())}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
             }
           }}
           onTouchEnd={(e) => {
@@ -8760,7 +8332,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           onMouseDown={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
             }
           }}
           onMouseUp={(e) => {
@@ -8777,10 +8349,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       </div>
 
       {pendingActivity?.fromAppleHealth && (
-        <div className="mx-4 mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}>
+        <div className="mx-4 mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08)' }}>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-lg">📱</span>
-            <span style={{ color: '#00FF94' }}>Synced from Apple Health</span>
+            <span className="text-white font-medium">Synced from Apple Health</span>
           </div>
           <div className="flex gap-4 mt-2 text-xs text-gray-400">
             {pendingActivity.calories && <span>{pendingActivity.calories} cal</span>}
@@ -8811,40 +8383,41 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
               style={{
-                backgroundColor: 'rgba(0,255,148,0.1)',
-                border: '1px solid rgba(0,255,148,0.3)'
+                borderRadius: 20,
+                backgroundColor: 'rgba(255,255,255,0.06)',
+                boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)'
               }}
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.09)';
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
               }}
               onMouseDown={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.09)';
               }}
               onMouseUp={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.2)' }}>
-                <svg className="w-7 h-7" fill="#00FF94" viewBox="0 0 24 24">
+              <div className="w-14 h-14 flex items-center justify-center flex-shrink-0" style={{ borderRadius: 14, backgroundColor: '#fff' }}>
+                <svg className="w-7 h-7" fill="#000" viewBox="0 0 24 24">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
                 </svg>
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Start an Activity</div>
-                <div className="text-sm text-gray-400 mt-0.5">Live heart rate & calorie tracking with Apple Watch</div>
+                <div className="font-semibold text-white" style={{ fontSize: 18 }}>Start an Activity</div>
+                <div className="text-sm mt-0.5" style={{ color: '#8a8a8a', lineHeight: 1.35 }}>Live heart rate & calorie tracking with Apple Watch</div>
               </div>
-              <div className="text-gray-500">→</div>
+              <div style={{ color: '#666', fontSize: 18 }}>→</div>
             </button>
 
             {/* Log Completed option - Secondary */}
@@ -8854,14 +8427,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 triggerHaptic(ImpactStyle.Light);
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
-              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+              style={{ borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.04)' }}
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
               }}
               onMouseDown={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
@@ -8869,21 +8442,21 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               }}
               onMouseUp={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                ✓
+              <div className="w-14 h-14 flex items-center justify-center flex-shrink-0" style={{ borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg text-gray-300">Log Completed Activity</div>
-                <div className="text-sm text-gray-500 mt-0.5">Record a workout you already finished</div>
+                <div className="font-semibold" style={{ fontSize: 18, color: '#ddd' }}>Log Completed Activity</div>
+                <div className="text-sm mt-0.5" style={{ color: '#8a8a8a', lineHeight: 1.35 }}>Record a workout you already finished</div>
               </div>
-              <div className="text-gray-500">→</div>
+              <div style={{ color: '#666', fontSize: 18 }}>→</div>
             </button>
 
             {/* Tips for different device users */}
@@ -8988,36 +8561,39 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               if (workout.maxHr) setMaxHr(String(workout.maxHr));
                               triggerHaptic(ImpactStyle.Medium);
                             }}
-                            className="w-full p-3 rounded-xl text-left transition-all duration-150 flex items-center gap-3"
-                            style={{
-                              backgroundColor: 'rgba(255,255,255,0.05)',
-                              border: '1px solid rgba(255,255,255,0.1)'
-                            }}
+                            className="w-full text-left transition-all duration-150 flex items-center gap-3"
+                            style={{ ...CARD_SURFACE, padding: '12px 14px' }}
                             onTouchStart={(e) => {
                               e.currentTarget.style.transform = 'scale(0.98)';
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                             }}
                             onTouchEnd={(e) => {
                               e.currentTarget.style.transform = 'scale(1)';
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                             }}
                           >
-                            <ActivityIcon type={workout.type} subtype={workout.subtype} size={24} />
+                            {(() => {
+                              // Home's line icon on a tile tinted in the workout's category colour
+                              const cat = getActivityCategory(workout);
+                              const catColor = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : null;
+                              return (
+                                <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: catColor ? `rgba(${hexToRgb(catColor)},0.16)` : 'rgba(170,170,170,0.16)' }}>
+                                  <ActivityIcon type={workout.type} subtype={workout.subtype} size={22} color={catColor || '#bbb'} />
+                                </div>
+                              );
+                            })()}
                             <div className="flex-1 min-w-0">
-                              <div className="text-white font-medium truncate">
+                              <div className="text-white font-semibold truncate" style={{ fontSize: 15 }}>
                                 {workout.appleWorkoutName || workout.subtype || workout.type}
                               </div>
-                              <div className="text-xs text-gray-400 mt-0.5">
-                                {formatWorkoutDate(workout.date)} • {workout.time} • {workout.duration} min
+                              <div className="mt-0.5" style={{ fontSize: 13, color: '#8a8a8a' }}>
+                                {formatWorkoutDate(workout.date)} · {workout.time} · {workout.duration} min
                               </div>
                               {(workout.calories || workout.distance) && (
-                                <div className="flex gap-2 mt-1 text-xs text-gray-500">
-                                  {workout.calories && <span><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{workout.calories} cal</span>}
-                                  {workout.distance && <span>📍 {_milesToDisplay(workout.distance).toFixed(2)} {_distanceUnitLabel}</span>}
+                                <div className="mt-0.5" style={{ fontSize: 12, color: '#666' }}>
+                                  {[workout.calories ? `${workout.calories} cal` : null, workout.distance ? `${_milesToDisplay(workout.distance).toFixed(2)} ${_distanceUnitLabel}` : null].filter(Boolean).join(' · ')}
                                 </div>
                               )}
                             </div>
-                            <span className="text-gray-500">→</span>
+                            <span style={{ color: '#555', fontSize: 20 }}>›</span>
                           </button>
                         );
                       })}
@@ -9433,9 +9009,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onClick={() => setCountToward('warmup')}
                     className="flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
                     style={{
-                      backgroundColor: countToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: countToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
-                      color: countToward === 'warmup' ? '#FFD60A' : 'white'
+                      backgroundColor: countToward === 'warmup' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'warmup' ? '1px solid #fff' : '1px solid transparent',
+                      color: 'white'
                     }}
                   >
                     <span>🔥</span> Warm Up
@@ -9518,12 +9094,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   <div
                     className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                     style={{
-                      borderColor: saveCustomSport ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                      backgroundColor: saveCustomSport ? 'rgba(0,255,148,0.2)' : 'transparent'
+                      borderColor: saveCustomSport ? '#fff' : 'rgba(255,255,255,0.3)',
+                      backgroundColor: saveCustomSport ? '#fff' : 'transparent'
                     }}
                     onClick={() => { setSaveCustomSport(!saveCustomSport); triggerHaptic(ImpactStyle.Light); }}
                   >
-                    {saveCustomSport && <span style={{ color: '#00FF94' }}>✓</span>}
+                    {saveCustomSport && <span style={{ color: '#000' }}>✓</span>}
                   </div>
                   <span className="text-sm text-gray-400">Save as option for future</span>
                 </label>
@@ -9544,8 +9120,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onTouchStart={() => triggerHaptic(ImpactStyle.Light)}
                     className="w-12 h-12 rounded-xl flex items-center justify-center transition-all"
                     style={{
-                      backgroundColor: showIconPicker ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: showIconPicker ? '1px solid #00FF94' : '1px solid rgba(255,255,255,0.1)'
+                      backgroundColor: showIconPicker ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: showIconPicker ? '1px solid #fff' : '1px solid rgba(255,255,255,0.1)'
                     }}
                   >
                     <ActivityIcon
@@ -9556,7 +9132,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         customActivityCategory === 'strength' ? '#00FF94' :
                         customActivityCategory === 'cardio' ? '#FF9500' :
                         customActivityCategory === 'recovery' ? '#00D1FF' :
-                        customActivityCategory === 'warmup' ? '#FFD60A' : undefined
+                        customActivityCategory === 'warmup' ? '#aaa' : undefined
                       ) : undefined}
                     />
                   </button>
@@ -9594,11 +9170,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               }}
                               className="w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:bg-white/10"
                               style={{
-                                backgroundColor: customActivityIcon === name ? 'rgba(0,255,148,0.2)' : 'transparent',
-                                border: customActivityIcon === name ? '1px solid #00FF94' : '1px solid transparent'
+                                backgroundColor: customActivityIcon === name ? 'rgba(255,255,255,0.14)' : 'transparent',
+                                border: customActivityIcon === name ? '1px solid #fff' : '1px solid transparent'
                               }}
                             >
-                              <Icon size={20} color={customActivityIcon === name ? '#00FF94' : '#aaa'} strokeWidth={2} />
+                              <Icon size={20} color={customActivityIcon === name ? '#fff' : '#aaa'} strokeWidth={2} />
                             </button>
                           ))}
                         </div>
@@ -9653,12 +9229,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onClick={() => { setCustomActivityCategory('warmup'); triggerHaptic(ImpactStyle.Light); }}
                     className="w-full mt-2 py-2 px-3 rounded-xl text-center transition-all flex items-center justify-center gap-2"
                     style={{
-                      backgroundColor: customActivityCategory === 'warmup' ? 'rgba(255,214,10,0.15)' : 'rgba(255,255,255,0.05)',
-                      border: customActivityCategory === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent'
+                      backgroundColor: customActivityCategory === 'warmup' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: customActivityCategory === 'warmup' ? '1px solid #fff' : '1px solid transparent'
                     }}
                   >
                     <span className="text-sm">🔥</span>
-                    <span className="text-xs font-medium" style={{ color: customActivityCategory === 'warmup' ? '#FFD60A' : 'rgba(255,255,255,0.6)' }}>Warm Up</span>
+                    <span className="text-xs font-medium" style={{ color: customActivityCategory === 'warmup' ? '#fff' : 'rgba(255,255,255,0.6)' }}>Warm Up</span>
                   </button>
                   {customActivityCategory === 'warmup' && (
                     <p className="text-[11px] text-gray-500 mt-2">
@@ -9673,12 +9249,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       <div
                         className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                         style={{
-                          borderColor: saveHKIcon ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                          backgroundColor: saveHKIcon ? 'rgba(0,255,148,0.2)' : 'transparent'
+                          borderColor: saveHKIcon ? '#fff' : 'rgba(255,255,255,0.3)',
+                          backgroundColor: saveHKIcon ? '#fff' : 'transparent'
                         }}
                         onClick={() => { setSaveHKIcon(!saveHKIcon); triggerHaptic(ImpactStyle.Light); }}
                       >
-                        {saveHKIcon && <span style={{ color: '#00FF94' }}>✓</span>}
+                        {saveHKIcon && <span style={{ color: '#000' }}>✓</span>}
                       </div>
                       <span className="text-sm text-gray-400">Remember icon for future {customActivityName} workouts</span>
                     </label>
@@ -9687,12 +9263,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         <div
                           className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                           style={{
-                            borderColor: saveHKCategory ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                            backgroundColor: saveHKCategory ? 'rgba(0,255,148,0.2)' : 'transparent'
+                            borderColor: saveHKCategory ? '#fff' : 'rgba(255,255,255,0.3)',
+                            backgroundColor: saveHKCategory ? '#fff' : 'transparent'
                           }}
                           onClick={() => { setSaveHKCategory(!saveHKCategory); triggerHaptic(ImpactStyle.Light); }}
                         >
-                          {saveHKCategory && <span style={{ color: '#00FF94' }}>✓</span>}
+                          {saveHKCategory && <span style={{ color: '#000' }}>✓</span>}
                         </div>
                         <span className="text-sm text-gray-400">
                           Always count {customActivityName} toward {
@@ -9710,12 +9286,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <div
                       className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                       style={{
-                        borderColor: saveCustomActivity ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                        backgroundColor: saveCustomActivity ? 'rgba(0,255,148,0.2)' : 'transparent'
+                        borderColor: saveCustomActivity ? '#fff' : 'rgba(255,255,255,0.3)',
+                        backgroundColor: saveCustomActivity ? '#fff' : 'transparent'
                       }}
                       onClick={() => { setSaveCustomActivity(!saveCustomActivity); triggerHaptic(ImpactStyle.Light); }}
                     >
-                      {saveCustomActivity && <span style={{ color: '#00FF94' }}>✓</span>}
+                      {saveCustomActivity && <span style={{ color: '#000' }}>✓</span>}
                     </div>
                     <span className="text-sm text-gray-400">Save as option for future</span>
                   </label>
@@ -9794,7 +9370,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             ) : activityType !== 'Chiropractic' && (
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
-                Duration {isFromAppleHealth && <span style={{ color: '#00FF94' }}>(from Apple Health)</span>}
+                Duration {isFromAppleHealth && <span style={{ color: '#8a8a8a' }}>(from Apple Health)</span>}
               </label>
               <DurationPicker
                 hours={durationHours}
@@ -9947,7 +9523,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                             'hover:bg-white/10'
                           }`}
                           style={{
-                            backgroundColor: dayDate === date ? '#00FF94' : 'transparent',
+                            backgroundColor: dayDate === date ? '#fff' : 'transparent',
                             color: dayDate === date ? 'black' : 'white',
                             opacity: isFuture && dayDate !== date ? 0.25 : 1
                           }}
@@ -9966,26 +9542,26 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           setShowDatePicker(false);
                         }}
                         className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-150"
-                        style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}
+                        style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff' }}
                         onTouchStart={(e) => {
                           e.currentTarget.style.transform = 'scale(0.95)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.14)';
                         }}
                         onTouchEnd={(e) => {
                           e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                         }}
                         onMouseDown={(e) => {
                           e.currentTarget.style.transform = 'scale(0.95)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.14)';
                         }}
                         onMouseUp={(e) => {
                           e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                         }}
                       >
                         Today
@@ -10067,7 +9643,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <button
                       onClick={() => { setActivityTime(formatTimeOfDay()); triggerHaptic(ImpactStyle.Light); }}
                       className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-150"
-                      style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}
+                      style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff' }}
                     >
                       Now
                     </button>
@@ -10123,7 +9699,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       return isFromNotification && linkedWorkout && !showOtherLinkableWorkouts ? (
                       <>
                         <div
-                          className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
+                          className="p-3 rounded-xl bg-white/10 border-2 border-white cursor-pointer transition-all"
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -10139,7 +9715,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               </div>
                             </div>
                             <div className="text-right">
-                              <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                              <span className="text-white text-xs font-medium">✓ Linked</span>
                             </div>
                           </div>
                           {/* Show metrics preview */}
@@ -10162,7 +9738,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           <button
                             onClick={() => setShowOtherLinkableWorkouts(true)}
                             className="w-full py-2 text-center text-sm transition-all active:opacity-70"
-                            style={{ color: '#00FF94' }}
+                            style={{ color: '#fff' }}
                           >
                             See other workouts ({otherWorkoutsCount})
                           </button>
@@ -10179,7 +9755,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               onClick={() => handleLinkWorkout(workout)}
                               className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer ${
                                 isLinked
-                                  ? 'bg-[#00FF94]/20 border-2 border-[#00FF94]'
+                                  ? 'bg-white/10 border-2 border-white'
                                   : 'bg-white/5 border border-white/10 active:bg-white/20'
                               }`}
                             >
@@ -10198,7 +9774,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 </div>
                                 <div className="text-right">
                                   {isLinked ? (
-                                    <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                                    <span className="text-white text-xs font-medium">✓ Linked</span>
                                   ) : (
                                     <span className="text-gray-500 text-xs">Tap to link</span>
                                   )}
@@ -10224,7 +9800,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         {linkedWorkout && !linkableWorkouts.find(w => w.healthKitUUID === linkedWorkout.healthKitUUID) && (
                           <div
                             onClick={() => handleLinkWorkout(linkedWorkout)}
-                            className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
+                            className="p-3 rounded-xl bg-white/10 border-2 border-white cursor-pointer transition-all"
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3">
@@ -10240,7 +9816,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 </div>
                               </div>
                               <div className="text-right">
-                                <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                                <span className="text-white text-xs font-medium">✓ Linked</span>
                               </div>
                             </div>
                             {/* Show metrics preview */}
@@ -10276,7 +9852,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Optional Metrics Section */}
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
-                Workout Metrics {isFromAppleHealth ? <span style={{ color: '#00FF94' }}>(from Apple Health)</span> : linkedWorkout ? <span style={{ color: '#00FF94' }}>(from linked workout)</span> : <span className="text-gray-600">(optional)</span>}
+                Workout Metrics {isFromAppleHealth ? <span style={{ color: '#8a8a8a' }}>(from Apple Health)</span> : linkedWorkout ? <span style={{ color: '#8a8a8a' }}>(from linked workout)</span> : <span className="text-gray-600">(optional)</span>}
               </label>
               <div className="grid grid-cols-3 gap-3">
                 <div>
@@ -10327,7 +9903,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       || c.challengerName
                       || 'Friend';
                     const cat = c.matchRule?.category;
-                    const tint = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : '#FFD60A';
+                    const tint = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : '#aaa';
                     return (
                       <button
                         key={c.id}
@@ -10380,9 +9956,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   {photoMissingForChallenge && (
                     <div
                       className="mt-2 p-3 rounded-xl"
-                      style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
+                      style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.2)' }}
                     >
-                      <p className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+                      <p className="text-xs font-semibold" style={{ color: '#fff' }}>
                         📸 Photo required to fulfill {photoRequiredSelected.length === 1
                           ? `${friendsByUid[photoRequiredSelected[0].challengerUid]?.displayName
                               || friendsByUid[photoRequiredSelected[0].challengerUid]?.username
@@ -10443,7 +10019,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             <div>
               <label
                 className="text-xs uppercase tracking-wider mb-2 block"
-                style={{ color: photoMissingForChallenge ? '#FFD60A' : 'rgb(107, 114, 128)' }}
+                style={{ color: photoMissingForChallenge ? '#fff' : 'rgb(107, 114, 128)' }}
               >
                 Photo {photoMissingForChallenge ? '(required for challenge)' : '(optional)'}
               </label>
@@ -10459,7 +10035,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
               {isLoadingPhoto ? (
                 <div className="w-full h-48 rounded-xl bg-white/5 flex items-center justify-center">
-                  <div className="w-8 h-8 border-2 border-gray-500 border-t-[#00FF94] rounded-full animate-spin" />
+                  <div className="w-8 h-8 border-2 border-gray-500 border-t-white rounded-full animate-spin" />
                 </div>
               ) : photoPreview ? (
                 <div className="space-y-3">
@@ -10486,13 +10062,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <div className="flex gap-2">
                       <button
                         onClick={() => setIsPhotoPrivate(false)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Friends
                       </button>
                       <button
                         onClick={() => setIsPhotoPrivate(true)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Only Me
                       </button>
@@ -10537,8 +10113,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   <div className="text-sm font-medium text-white">Challenge a friend</div>
                   <div className="text-xs text-gray-500 mt-0.5 leading-snug">After saving, send this workout to a friend to match within 24–72 hours.</div>
                 </div>
-                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#00FF94' : 'rgba(255,255,255,0.15)' }}>
-                  <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: challengeAfterSave ? 22 : 2 }} />
+                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#fff' : 'rgba(255,255,255,0.15)' }}>
+                  <div className="absolute top-0.5 w-5 h-5 rounded-full transition-all" style={{ left: challengeAfterSave ? 22 : 2, backgroundColor: challengeAfterSave ? '#000' : '#fff' }} />
                 </div>
               </button>
             )}
@@ -11481,11 +11057,11 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
         <button
           onClick={() => { triggerHaptic(ImpactStyle.Light); onNavigateToChallenges?.({ status: 'pending' }); }}
           className="w-full mb-3 p-3 rounded-xl flex items-center gap-3 text-left active:opacity-80 transition-opacity"
-          style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.3)' }}
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}
         >
           <span className="text-lg">⚡</span>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+            <div className="text-xs font-semibold text-white">
               {pendingChallenges.length === 1
                 ? `${pendingChallenges[0].challengerName || 'A friend'} challenged you`
                 : `${pendingChallenges.length} challenges waiting on you`}
@@ -11550,9 +11126,12 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
 
         const renderPendingBanner = (workouts, isUncategorized) => {
           if (workouts.length === 0) return null;
-          const rgb = isUncategorized ? '255,200,0' : '0,255,148';
-          const hex = isUncategorized ? '#FFC800' : '#00FF94';
-          const emoji = isUncategorized ? '⚠️' : '📱';
+          // Card surface with a tile (Nov 2026 redesign, mocks/mock-leftovers.html home.new): a
+          // categorized workout gets its category tint and line icon, an uncategorized one an alert.
+          const first = workouts[0];
+          const bannerCat = isUncategorized ? null : getActivityCategory(first);
+          const bannerHex = bannerCat === 'cardio' ? '#FF9500' : bannerCat === 'recovery' ? '#00D1FF' : (bannerCat === 'lifting' || bannerCat === 'lifting+cardio') ? '#00FF94' : null;
+          const tileBg = workouts.length === 1 && bannerHex ? `rgba(${hexToRgb(bannerHex)},0.16)` : 'rgba(255,255,255,0.08)';
           const title = workouts.length === 1
             ? (isUncategorized ? `${workouts[0].appleWorkoutName || workouts[0].type} workout detected` : 'New workout detected')
             : (isUncategorized
@@ -11584,44 +11163,37 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                     openPending();
                   }
                 }}
-                className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150 cursor-pointer"
-                style={{ backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.3)` }}
-                onTouchStart={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.98)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
-                }}
-                onTouchEnd={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.98)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
+                className="w-full flex items-center gap-3 transition-all duration-150 cursor-pointer"
+                style={{ ...CARD_SURFACE, borderRadius: 18, padding: 12 }}
+                onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.98)'; }}
+                onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.98)'; }}
+                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
               >
-                <span className="text-lg">{emoji}</span>
-                <div className="flex-1 text-left">
-                  <div className="text-xs font-semibold" style={{ color: hex }}>
+                <div className="flex items-center justify-center flex-shrink-0" style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: tileBg }}>
+                  {isUncategorized ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ddd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 9v4" /><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z" /><path d="M12 16h.01" /></svg>
+                  ) : workouts.length === 1 && bannerHex ? (
+                    <ActivityIcon type={first.type} subtype={first.subtype} size={19} color={bannerHex} />
+                  ) : (
+                    <ActivityIcon type={first.type} subtype={first.subtype} size={19} color="#ddd" />
+                  )}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <div className="text-white truncate" style={{ fontSize: 13.5, fontWeight: 600 }}>
                     {title}
                   </div>
-                  <div className="text-[10px] text-gray-400">
+                  <div className="truncate" style={{ fontSize: 11.5, color: '#8a8a8a', marginTop: 1 }}>
                     {subtitle}
                   </div>
                 </div>
                 {workouts.length > 1 && (
-                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: hex, color: '#000' }}>
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#fff', color: '#000' }}>
                     {workouts.length}
                   </span>
                 )}
-                <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: `rgba(${rgb},0.2)`, color: hex }}>
+                <span className="flex-shrink-0 bg-white text-black" style={{ padding: '6px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700 }}>
                   {workouts.length === 1 ? 'Add' : 'View'}
                 </span>
                 <button
@@ -11889,8 +11461,8 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             onClick={onAcceptNotifReask}
             className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
             style={{
-              backgroundColor: 'rgba(0,255,148,0.08)',
-              border: '1px solid rgba(0,255,148,0.25)'
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.12)'
             }}
             onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
             onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
@@ -11898,20 +11470,20 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
           >
             <span className="text-xl">🔔</span>
             <div className="flex-1 pr-6">
-              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00FF94' }}>
+              <div className="text-xs font-semibold flex items-center gap-1 text-white">
                 Nice work — want a nudge next time?
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </div>
               <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
-                We'll tell you when a ring is still open — before the week closes. Tap to turn on reminders.
+                We'll tell you when a goal is still open — before the week closes. Tap to turn on reminders.
               </div>
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); onDismissNotifReask(); }}
               className="absolute flex items-center justify-center"
-              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,255,148,0.6)' }}
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,255,255,0.5)' }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
@@ -12008,7 +11580,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
           </div>
         ) : (
           <p className="text-[15px] leading-snug" style={{ color: '#aaa' }}>
-            <span className="font-semibold text-white">No workout yet today.</span> A rest day still counts toward a winning week.
+            <span className="font-semibold text-white">No workout yet today.</span> Your steps still count toward the week.
           </p>
         )}
 
@@ -19568,11 +19140,11 @@ export default function DaySevenApp() {
                   closeVacationSpill(() => deactivateVacationMode(true));
                 }}
                 className="w-full p-3.5 rounded-xl text-left flex items-start gap-3"
-                style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.18)' }}
               >
                 <span className="text-xl leading-none mt-0.5">🔥</span>
                 <div>
-                  <div className="text-sm font-semibold" style={{ color: '#00FF94' }}>Count toward my streak</div>
+                  <div className="text-sm font-semibold text-white">Count toward my streak</div>
                   <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">You're back — hit this week's goals to keep your streak going.</div>
                 </div>
               </button>
@@ -19892,7 +19464,7 @@ export default function DaySevenApp() {
       {showHealthReconnect && (
         <HKPrescreen
           title="Reconnect Apple Health."
-          body="Your Apple Health permission was reset — that happens after a reinstall or a move to a new phone. Reconnect to keep logging workouts to your rings automatically."
+          body="Your Apple Health permission was reset — that happens after a reinstall or a move to a new phone. Reconnect to keep logging workouts automatically."
           cta="Reconnect Apple Health"
           onConnected={(granted) => {
             setShowHealthReconnect(false);

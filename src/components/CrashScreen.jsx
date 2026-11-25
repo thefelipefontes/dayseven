@@ -26,8 +26,7 @@ const CrashScreen = ({ eventId }) => {
     </p>
     <button
       onClick={() => window.location.reload()}
-      className="px-6 py-3 rounded-full font-bold text-black"
-      style={{ backgroundColor: '#00FF94' }}
+      className="px-6 py-3 rounded-full font-bold text-black bg-white text-black active:bg-[#e5e5e5]"
     >
       Reload
     </button>

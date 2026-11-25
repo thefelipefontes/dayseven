@@ -13,8 +13,7 @@ const UpdateRequired = () => (
     </p>
     <button
       onClick={() => { try { window.open(APP_STORE_URL, '_blank'); } catch {} }}
-      className="w-full max-w-xs py-3.5 rounded-xl font-bold text-black active:opacity-80"
-      style={{ backgroundColor: '#00FF94' }}
+      className="w-full max-w-xs py-3.5 rounded-xl font-bold text-black active:opacity-80 bg-white text-black active:bg-[#e5e5e5]"
     >
       Open the App Store
     </button>

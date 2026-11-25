@@ -806,8 +806,8 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           {placedTotal > 0 && (<>
           <div className="flex items-end justify-between" style={{ paddingBottom: 16, marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <div>
-              <div style={{ ...rowStyle, ...NUM.big, lineHeight: 1 }}>{doneTotal}<small style={{ ...NUM.bigSmall, fontWeight: 700, color: '#666' }}>/{placedTotal}</small></div>
-              <div style={{ ...capsStyle, marginTop: 9 }}>Planned sessions done</div>
+              <div style={{ ...rowStyle, ...NUM.big, lineHeight: 0.8 }}>{doneTotal}<small style={{ ...NUM.bigSmall, fontWeight: 700, color: '#666' }}>/{placedTotal}</small></div>
+              <div style={{ ...capsStyle, marginTop: 10 }}>Planned sessions done</div>
             </div>
             <div className="text-right">
               <div style={{ ...rowStyle, ...NUM.value, justifyContent: 'flex-end' }}>{daysLeft}</div>

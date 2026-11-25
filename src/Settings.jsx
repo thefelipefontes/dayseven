@@ -1603,8 +1603,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               <h3 className="text-sm font-semibold text-gray-400 mb-3">CHALLENGES</h3>
               <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)' }}>
-                    <p className="text-2xl font-bold" style={{ color: '#FFD60A' }}>{wins}</p>
+                  <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <p className="text-2xl font-bold text-white">{wins}</p>
                     <p className="text-gray-500 text-[11px] uppercase tracking-wider mt-1">Wins</p>
                   </div>
                   <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -2466,8 +2466,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 <button
                   onClick={handleSavePhoto}
                   disabled={isUploadingPhoto}
-                  className="flex-1 py-3.5 rounded-xl font-semibold transition-all duration-150 active:scale-98 flex items-center justify-center gap-2"
-                  style={{ backgroundColor: '#00FF94', color: 'black' }}
+                  className="flex-1 py-3.5 rounded-xl font-semibold transition-all duration-150 active:scale-98 flex items-center justify-center gap-2 bg-white text-black active:bg-[#e5e5e5]"
                 >
                   {isUploadingPhoto ? (
                     <>

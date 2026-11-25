@@ -6591,8 +6591,7 @@ const SmartSaveExplainModal = ({ onClose, onDisable }) => {
         <div className="space-y-3">
           <button
             onClick={onClose}
-            className="w-full py-3 rounded-xl font-semibold text-black"
-            style={{ backgroundColor: '#00FF94' }}
+            className="w-full py-3 rounded-xl font-semibold bg-white text-black active:bg-[#e5e5e5]"
           >
             Got It
           </button>
@@ -11443,11 +11442,11 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
         <button
           onClick={() => { triggerHaptic(ImpactStyle.Light); onNavigateToChallenges?.({ status: 'pending' }); }}
           className="w-full mb-3 p-3 rounded-xl flex items-center gap-3 text-left active:opacity-80 transition-opacity"
-          style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.3)' }}
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}
         >
           <span className="text-lg">⚡</span>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+            <div className="text-xs font-semibold text-white">
               {pendingChallenges.length === 1
                 ? `${pendingChallenges[0].challengerName || 'A friend'} challenged you`
                 : `${pendingChallenges.length} challenges waiting on you`}
@@ -11851,8 +11850,8 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             onClick={onAcceptNotifReask}
             className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
             style={{
-              backgroundColor: 'rgba(0,255,148,0.08)',
-              border: '1px solid rgba(0,255,148,0.25)'
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.12)'
             }}
             onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
             onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
@@ -11860,7 +11859,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
           >
             <span className="text-xl">🔔</span>
             <div className="flex-1 pr-6">
-              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00FF94' }}>
+              <div className="text-xs font-semibold flex items-center gap-1 text-white">
                 Nice work — want a nudge next time?
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 18 15 12 9 6" />
@@ -11873,7 +11872,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             <button
               onClick={(e) => { e.stopPropagation(); onDismissNotifReask(); }}
               className="absolute flex items-center justify-center"
-              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,255,148,0.6)' }}
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,255,255,0.5)' }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
@@ -19529,11 +19528,11 @@ export default function DaySevenApp() {
                   closeVacationSpill(() => deactivateVacationMode(true));
                 }}
                 className="w-full p-3.5 rounded-xl text-left flex items-start gap-3"
-                style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.18)' }}
               >
                 <span className="text-xl leading-none mt-0.5">🔥</span>
                 <div>
-                  <div className="text-sm font-semibold" style={{ color: '#00FF94' }}>Count toward my streak</div>
+                  <div className="text-sm font-semibold text-white">Count toward my streak</div>
                   <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">You're back — hit this week's goals to keep your streak going.</div>
                 </div>
               </button>

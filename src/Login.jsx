@@ -422,8 +422,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50"
-            style={{ backgroundColor: '#00FF94' }}
+            className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50 bg-white text-black active:bg-[#e5e5e5]"
           >
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
@@ -522,8 +521,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50"
-            style={{ backgroundColor: '#00FF94' }}
+            className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50 bg-white text-black active:bg-[#e5e5e5]"
           >
             {isLoading ? 'Creating account...' : 'Create Account'}
           </button>
@@ -580,8 +578,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
             </p>
             <button
               onClick={() => { resetForm(); setAuthMode('email-signin'); }}
-              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95"
-              style={{ backgroundColor: '#00FF94' }}
+              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
             >
               Back to Sign In
             </button>
@@ -607,8 +604,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50"
-              style={{ backgroundColor: '#00FF94' }}
+              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50 bg-white text-black active:bg-[#e5e5e5]"
             >
               {isLoading ? 'Sending...' : 'Send Reset Link'}
             </button>

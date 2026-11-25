@@ -288,8 +288,8 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
           left: cutout.left,
           width: cutout.width,
           height: cutout.height,
-          border: '2px solid #00FF94',
-          boxShadow: '0 0 20px rgba(0, 255, 148, 0.4)',
+          border: '2px solid #fff',
+          boxShadow: '0 0 20px rgba(255,255,255,0.3)',
           pointerEvents: 'none'
         }}
       />
@@ -347,7 +347,7 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
               className="h-1 rounded-full transition-all duration-200"
               style={{
                 width: i === step ? 24 : 8,
-                backgroundColor: i === step ? '#00FF94' : 'rgba(255,255,255,0.2)'
+                backgroundColor: i === step ? '#fff' : 'rgba(255,255,255,0.2)'
               }}
             />
           ))}
@@ -402,11 +402,7 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
                 triggerHaptic(ImpactStyle.Light);
                 onNext();
               }}
-              className="px-4 py-2 rounded-full text-sm font-medium transition-all duration-150"
-              style={{
-                backgroundColor: '#00FF94',
-                color: '#000'
-              }}
+              className="px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 bg-white text-black active:bg-[#e5e5e5]"
               onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
               onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
             >

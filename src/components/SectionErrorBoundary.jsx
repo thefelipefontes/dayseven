@@ -65,8 +65,7 @@ export default class SectionErrorBoundary extends React.Component {
           </p>
           <button
             onClick={this.close}
-            className="px-6 py-3 rounded-full font-bold text-black"
-            style={{ backgroundColor: '#00FF94' }}
+            className="px-6 py-3 rounded-full font-bold text-black bg-white text-black active:bg-[#e5e5e5]"
           >
             Close
           </button>
@@ -85,8 +84,7 @@ export default class SectionErrorBoundary extends React.Component {
         </p>
         <button
           onClick={this.reset}
-          className="px-6 py-3 rounded-full font-bold text-black"
-          style={{ backgroundColor: '#00FF94' }}
+          className="px-6 py-3 rounded-full font-bold text-black bg-white text-black active:bg-[#e5e5e5]"
         >
           Try again
         </button>

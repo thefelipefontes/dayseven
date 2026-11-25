@@ -64,8 +64,8 @@ export const CATEGORY_COLORS = {
   recovery: '#00D1FF',
   steps: '#BF5AF2',
   calories: '#FF6B6B',
-  workouts: '#FFD60A',
-  wins: '#FFD60A',
+  workouts: '#FFFFFF',
+  wins: '#FFFFFF',
   longest: '#FFD700',
   overall: '#FFD700',
   distance: '#FF9500', // cardio orange: distance comes from runs, rides and walks

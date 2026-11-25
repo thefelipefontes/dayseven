@@ -33,7 +33,7 @@ export function WeekHead({ pct, won = false, right, rightLabel, compact = false,
         >
           {Math.round(pct)}<span style={bigSmall}>%</span>
         </div>
-        <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 12, color: won ? 'rgba(255,215,0,0.9)' : TEXT_MUTED }}>
+        <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 10, color: won ? 'rgba(255,215,0,0.9)' : TEXT_MUTED }}>
           {won ? 'Week won' : label}
         </div>
       </div>

@@ -1289,10 +1289,10 @@ export default function ProfilePage(props) {
                           onPresentPaywall?.();
                           return;
                         }
-                        if (dayActivities.length > 0) {
+                        // Today or a past day opens its sheet even with no workout, so its steps can be
+                        // seen (Felipe's option A, "Steps first"); logging moves to the sheet's Add.
+                        if (dayActivities.length > 0 || !isFuture) {
                           openDayModal();
-                        } else if (!isFuture) {
-                          onAddActivity && onAddActivity(day.date);
                         }
                       }}
                       className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
@@ -1536,7 +1536,7 @@ export default function ProfilePage(props) {
       })()}
 
       {/* Day Stats Modal - Full screen like week review */}
-      {(showDayModal || dayModalClosing) && calendarData[selectedDate] && (() => {
+      {(showDayModal || dayModalClosing) && selectedDate && (() => {
         // Get full activity data from activities array (has IDs and all stats)
         const fullDayActivities = visibleActivities.filter(a => a.date === selectedDate);
         // A Strength + Cardio session (Circuit) is listed once, under Strength. It used to
@@ -1565,7 +1565,7 @@ export default function ProfilePage(props) {
           <div 
             className="fixed inset-0 z-50 flex flex-col transition-opacity duration-150"
             style={{ 
-              backgroundColor: 'rgba(0,0,0,0.95)',
+              backgroundColor: '#000', // solid: a full-screen page, and the cards on it are translucent
               opacity: dayModalAnimating ? 1 : 0
             }}
           >
@@ -1593,6 +1593,65 @@ export default function ProfilePage(props) {
             </div>
             
             <div className="flex-1 overflow-auto p-4">
+              {fullDayActivities.length === 0 ? (() => {
+                // A day with no workout (mock restDay('A'), "Steps first"): the day's steps are the one
+                // big number against the daily share of the week's steps goal. Only steps and active
+                // calories are cached per day (healthHistory), so walked distance and active time
+                // aren't shown here.
+                const share = goals.stepsPerDay || 10000;
+                const weekGoal = share * 7;
+                const fmtK = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(n));
+                const pct = share > 0 ? Math.min(100, (daySteps / share) * 100) : 0;
+                const hit = daySteps >= share;
+                const diff = Math.abs(daySteps - share);
+                const stepsRgb = '191,90,242';
+                return (
+                  <>
+                    <div style={{ ...CARD_SURFACE, padding: '18px 20px 16px', marginBottom: 14 }}>
+                      <div className="flex items-end justify-between">
+                        <div>
+                          <div style={{ ...NUM.big, lineHeight: 0.8 }}>{fmtK(daySteps)}</div>
+                          <div className="flex items-center gap-1.5" style={{ ...CAPS_LABEL, marginTop: 10 }}><CategoryIcon category="steps" size={13} />Steps</div>
+                        </div>
+                        <div className="text-right">
+                          <div style={NUM.value}>{fmtK(share)}</div>
+                          <div style={{ ...CAPS_LABEL, marginTop: 6 }}>Daily share</div>
+                        </div>
+                      </div>
+                      <div className="relative" style={{ height: 10, borderRadius: 5, backgroundColor: `rgba(${stepsRgb},0.2)`, margin: '16px 0 8px' }}>
+                        <i className="absolute left-0 top-0 bottom-0 block" style={{ width: `${pct}%`, borderRadius: 5, backgroundColor: '#BF5AF2', boxShadow: hit ? `0 0 12px rgba(${stepsRgb},0.5)` : 'none' }} />
+                      </div>
+                      <div style={{ fontSize: 12.5, color: '#8a8a8a' }}>
+                        {daySteps === share ? `Right on your daily share of the week's ${fmtK(weekGoal)}` : `${fmtK(diff)} ${hit ? 'over' : 'under'} your daily share of the week's ${fmtK(weekGoal)}`}
+                      </div>
+                      {dayCalories > 0 && (
+                        <div className="flex" style={{ gap: 28, paddingTop: 14, marginTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                          <div>
+                            <div className="flex items-center gap-[5px]"><CategoryIcon category="calories" size={14} /><span style={{ ...CAPS_LABEL, fontSize: 9.5 }}>Active cal</span></div>
+                            <div style={{ ...NUM.value, marginTop: 5 }}>{dayCalories.toLocaleString()}</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Empty state: nothing logged, and that's fine */}
+                    <div className="text-center" style={{ borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.04)', padding: '18px 16px' }}>
+                      <div className="flex items-center justify-center mx-auto" style={{ width: 44, height: 44, borderRadius: 14, marginBottom: 10, backgroundColor: 'rgba(255,255,255,0.07)' }}>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M7 21l3 -4" /><path d="M16 21l-2 -4l-3 -3l1 -6" /><path d="M6 12l2 -3l4 -1l3 3l3 1" /></svg>
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 600 }}>No workouts logged</div>
+                      <div style={{ fontSize: 12.5, color: '#8a8a8a', margin: '4px 0 14px' }}>A rest day still counts toward a winning week.</div>
+                      <button
+                        onClick={() => { closeDayModal(); onAddActivity && onAddActivity(selectedDate); }}
+                        className="bg-white text-black active:bg-[#e5e5e5] transition-colors"
+                        style={{ padding: '11px 22px', borderRadius: 999, fontWeight: 700, fontSize: 14 }}
+                      >
+                        Log a workout
+                      </button>
+                    </div>
+                  </>
+                );
+              })() : (<>
               {/* One card like Stats Overview (Nov 2026 redesign, mock daySheet('new')) */}
               {(() => {
                 const mins = fullDayActivities.reduce((sum, a) => sum + (parseInt(a.duration, 10) || 0), 0);
@@ -1692,6 +1751,7 @@ export default function ProfilePage(props) {
                 </div>
               </SwipeableProvider>
               <p className="text-center" style={{ fontSize: 12, color: '#666', marginTop: 12 }}>Swipe left to delete, tap for details</p>
+              </>)}
             </div>
           </div>
         );

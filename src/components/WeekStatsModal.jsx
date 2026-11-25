@@ -7,8 +7,10 @@ import CategoryIcon from './CategoryIcon';
 import { initialUserData } from '../utils/initialUserData';
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
 import { stepsDailyShare } from '../utils/weekGoals';
+import { formatDistanceValue, unitLabel } from '../utils/distance';
+import { formatFriendlyDate } from '../utils/dateHelpers';
 
-const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity, onShare, userData }) => {
+const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity, onShare, userData, distanceUnit = 'mi' }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   // Day strip scrubbing (same as the Month view): the day under the finger, or null.
@@ -334,7 +336,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
               <div className="text-[10px] text-gray-400">Sessions</div>
             </div>
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-base font-black">{(weekData?.miles || 0).toFixed(1)} mi</div>
+              <div className="text-base font-black">{formatDistanceValue(weekData?.miles || 0, distanceUnit, 1)} {unitLabel(distanceUnit)}</div>
               <div className="text-[10px] text-gray-400">Distance</div>
             </div>
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -441,7 +443,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                         {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                         {activity.subtype || activity.type}
                       </div>
-                      <div className="text-xs text-gray-500">{activity.date}</div>
+                      <div className="text-xs text-gray-500">{formatFriendlyDate(activity.date)}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
                       <span>{activity.duration} min</span>
@@ -489,10 +491,10 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                         {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                         {activity.subtype || activity.type}
                       </div>
-                      <div className="text-xs text-gray-500">{activity.date}</div>
+                      <div className="text-xs text-gray-500">{formatFriendlyDate(activity.date)}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
-                      {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
+                      {activity.distance && <span>{formatDistanceValue(activity.distance, distanceUnit, 2)} {unitLabel(distanceUnit)}</span>}
                       <span>{activity.duration} min</span>
                       {activity.calories > 0 && <span>{activity.calories} cal</span>}
                     </div>
@@ -537,7 +539,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                         {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                         {activity.type === 'Other' ? (activity.subtype || activity.type) : activity.type}
                       </div>
-                      <div className="text-xs text-gray-500">{activity.date}</div>
+                      <div className="text-xs text-gray-500">{formatFriendlyDate(activity.date)}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
                       <span>{activity.duration} min</span>
@@ -576,10 +578,10 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                       <div className="font-medium text-sm flex items-center gap-1">
                         {activity.subtype ? `Walking • ${activity.subtype}` : 'Walking'}
                       </div>
-                      <div className="text-xs text-gray-500">{activity.date}</div>
+                      <div className="text-xs text-gray-500">{formatFriendlyDate(activity.date)}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
-                      {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
+                      {activity.distance && <span>{formatDistanceValue(activity.distance, distanceUnit, 2)} {unitLabel(distanceUnit)}</span>}
                       {activity.duration && <span>{activity.duration} min</span>}
                       {activity.calories > 0 && <span>{activity.calories} cal</span>}
                     </div>

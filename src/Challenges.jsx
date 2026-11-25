@@ -157,7 +157,7 @@ function DraggableSheet({ isClosing, onDismiss, zClass = 'z-50', children }) {
   );
 }
 
-export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [], friend, onPick, userProfile }) {
+export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [], friend, onPick, userProfile, onLogWorkout }) {
   const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => { if (isOpen) setIsClosing(false); }, [isOpen]);
@@ -199,7 +199,20 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
         {eligible.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-gray-400 mb-2">No workouts logged today.</p>
-            <p className="text-gray-500 text-sm">Challenges are same-day only — log a workout first, then come back here.</p>
+            <p className="text-gray-500 text-sm">Challenges are same-day only. Log today's workout, then challenge {friend?.displayName?.split(' ')[0] || friend?.username || 'them'} with it.</p>
+            {onLogWorkout && (
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  setIsClosing(true);
+                  setTimeout(() => { onClose(); onLogWorkout(); }, 250);
+                }}
+                className="mt-5 px-5 py-2.5 rounded-full text-sm font-semibold"
+                style={{ backgroundColor: 'white', color: 'black' }}
+              >
+                Log a workout
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-2">

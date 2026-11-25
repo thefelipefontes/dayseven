@@ -11,13 +11,17 @@ import {
   saveNotificationPreferences,
   requestNotificationPermission,
   checkNotificationPermission,
+  getNotificationPermissionStatus,
   isNotificationSupported,
 } from './services/notificationService';
+import { openAppSettings } from './services/healthService';
 
 const NotificationSettings = ({ userId, onClose, onPermissionGranted }) => {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // null, 'saved', 'error'
   const [permissionGranted, setPermissionGranted] = useState(null); // null = checking, true/false = known
+  // iOS shows the permission prompt only once; after "Don't Allow" the only way back is Settings.
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [allEnabled, setAllEnabled] = useState(false);
   const [preferences, setPreferences] = useState({
     // Social
@@ -62,6 +66,9 @@ const NotificationSettings = ({ userId, onClose, onPermissionGranted }) => {
       checkNotificationPermission()
         .then(result => setPermissionGranted(result.granted))
         .catch(() => setPermissionGranted(false));
+      getNotificationPermissionStatus()
+        .then(status => setPermissionDenied(status === 'denied'))
+        .catch(() => {});
     } else {
       setPermissionGranted(false);
     }
@@ -83,6 +90,11 @@ const NotificationSettings = ({ userId, onClose, onPermissionGranted }) => {
   };
 
   const handleRequestPermission = async () => {
+    // Already denied: the system prompt won't show again, so go to DaySeven's page in Settings.
+    if (permissionDenied) {
+      openAppSettings();
+      return;
+    }
     const { granted } = await requestNotificationPermission();
     setPermissionGranted(granted);
 
@@ -91,10 +103,26 @@ const NotificationSettings = ({ userId, onClose, onPermissionGranted }) => {
     // the next cold launch.
     if (granted) onPermissionGranted?.();
 
-    if (!granted) {
-      alert('Please enable notifications in your device settings to receive push notifications.');
-    }
+    // Declined (now or earlier): switch the button to "Open Settings".
+    if (!granted) setPermissionDenied(true);
   };
+
+  // Coming back from Settings: pick up a permission turned on there.
+  useEffect(() => {
+    if (!permissionDenied || !isNotificationSupported()) return undefined;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      checkNotificationPermission().then(({ granted }) => {
+        if (granted) {
+          setPermissionGranted(true);
+          setPermissionDenied(false);
+          onPermissionGranted?.();
+        }
+      }).catch(() => {});
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [permissionDenied, onPermissionGranted]);
 
   const saveWithTimeout = async (prefs) => {
     // Always include the user's timezone so cloud functions send at the right local time
@@ -275,15 +303,17 @@ const NotificationSettings = ({ userId, onClose, onPermissionGranted }) => {
           </div>
         ) : !permissionGranted ? (
           <div className="bg-zinc-800/50 rounded-xl p-4 mb-6">
-            <p className="text-white font-medium mb-2">Enable Notifications</p>
+            <p className="text-white font-medium mb-2">{permissionDenied ? 'Notifications are off' : 'Enable Notifications'}</p>
             <p className="text-gray-400 text-sm mb-3">
-              Get notified about friend activity, streak reminders, and more.
+              {permissionDenied
+                ? 'Turn on Notifications for DaySeven in Settings to get friend activity, streak reminders, and more.'
+                : 'Get notified about friend activity, streak reminders, and more.'}
             </p>
             <button
               onClick={handleRequestPermission}
               className="bg-cyan-500 text-black font-semibold px-4 py-2 rounded-lg"
             >
-              Enable Notifications
+              {permissionDenied ? 'Open Settings' : 'Enable Notifications'}
             </button>
           </div>
         ) : (

@@ -1,5 +1,6 @@
 import React from 'react';
 import FriendProfileCard from './FriendProfileCard';
+import { resolveUnit } from '../utils/distance';
 
 /**
  * Modal showing the current user's own profile card. Thin wrapper around the shared
@@ -34,6 +35,7 @@ export default function OwnProfileModal({ user, userProfile, userData, onClose }
       friend={friend}
       preloadedProfile={preloadedProfile}
       onClose={onClose}
+      distanceUnit={resolveUnit(userProfile)}
     />
   );
 }

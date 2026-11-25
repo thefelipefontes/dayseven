@@ -625,146 +625,6 @@ const ProgressBar = ({ progress, color = '#00FF94', height = 4 }) => (
 
 // ActivityIcon is imported from ./components/ActivityIcon
 
-// Heat Map Calendar Component
-const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => {
-  const [viewMonths, setViewMonths] = useState(3); // Show last 3 months
-  
-  // Generate last N months of dates
-  const generateHeatMapData = () => {
-    const days = [];
-    const today = new Date();
-    const startDate = new Date(today);
-    startDate.setDate(1); // before setMonth, or the 29th–31st overflows into the next month
-    startDate.setMonth(startDate.getMonth() - viewMonths + 1);
-    
-    // Adjust to start from Sunday
-    const dayOfWeek = startDate.getDay();
-    startDate.setDate(startDate.getDate() - dayOfWeek);
-    
-    const endDate = new Date(today);
-    endDate.setDate(endDate.getDate() + (6 - today.getDay())); // End of current week
-    
-    const todayStr = toLocalDateStr(today);
-
-    let currentDate = new Date(startDate);
-    while (currentDate <= endDate) {
-      const dateStr = toLocalDateStr(currentDate);
-      const activities = data[dateStr] || [];
-      days.push({
-        date: dateStr,
-        day: currentDate.getDate(),
-        month: currentDate.getMonth(),
-        year: currentDate.getFullYear(),
-        activities,
-        activityCount: activities.length,
-        isToday: dateStr === todayStr,
-        isFuture: currentDate > today,
-        dayOfWeek: currentDate.getDay()
-      });
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-    return days;
-  };
-
-  const heatMapDays = generateHeatMapData();
-  
-  // Group by weeks for display
-  const weeks = [];
-  for (let i = 0; i < heatMapDays.length; i += 7) {
-    weeks.push(heatMapDays.slice(i, i + 7));
-  }
-
-  // Get intensity color based on activity count
-  const getIntensityColor = (count, isFuture) => {
-    if (isFuture) return 'rgba(255,255,255,0.02)';
-    if (count === 0) return 'rgba(255,255,255,0.05)';
-    if (count === 1) return 'rgba(0,255,148,0.3)';
-    if (count === 2) return 'rgba(0,255,148,0.5)';
-    return 'rgba(0,255,148,0.8)';
-  };
-
-  // Get month labels
-  const getMonthLabels = () => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const labels = [];
-    let lastMonth = -1;
-    
-    weeks.forEach((week, weekIndex) => {
-      const firstDayOfWeek = week[0];
-      if (firstDayOfWeek && firstDayOfWeek.month !== lastMonth) {
-        labels.push({ month: months[firstDayOfWeek.month], weekIndex });
-        lastMonth = firstDayOfWeek.month;
-      }
-    });
-    return labels;
-  };
-
-  const monthLabels = getMonthLabels();
-
-  return (
-    <div className="mb-4">
-      {/* Month labels */}
-      <div className="flex mb-2 ml-8 text-[10px] text-gray-500">
-        {monthLabels.map((label, i) => (
-          <div 
-            key={i} 
-            className="absolute"
-            style={{ marginLeft: `${label.weekIndex * 14 + 32}px` }}
-          >
-            {label.month}
-          </div>
-        ))}
-      </div>
-      
-      <div className="flex gap-1 mt-6">
-        {/* Day labels */}
-        <div className="flex flex-col gap-1 text-[10px] text-gray-500 mr-1">
-          <span className="h-3"></span>
-          <span className="h-3">M</span>
-          <span className="h-3"></span>
-          <span className="h-3">W</span>
-          <span className="h-3"></span>
-          <span className="h-3">F</span>
-          <span className="h-3"></span>
-        </div>
-        
-        {/* Heat map grid */}
-        <div className="flex gap-[3px] overflow-x-auto pb-2">
-          {weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="flex flex-col gap-[3px]">
-              {week.map((day, dayIndex) => (
-                <button
-                  key={day.date}
-                  onClick={() => !day.isFuture && onSelectDate(day.date)}
-                  className="w-3 h-3 rounded-sm transition-all duration-200 hover:scale-125"
-                  style={{
-                    backgroundColor: getIntensityColor(day.activityCount, day.isFuture),
-                    border: selectedDate === day.date ? '1px solid #00FF94' : day.isToday ? '1px solid rgba(255,255,255,0.5)' : 'none',
-                    cursor: day.isFuture ? 'default' : 'pointer'
-                  }}
-                  title={`${day.date}: ${day.activityCount} activities`}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-      
-      {/* Legend */}
-      <div className="flex items-center justify-end gap-2 mt-3 text-[10px] text-gray-500">
-        <span>Less</span>
-        <div className="flex gap-1">
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(0,255,148,0.3)' }} />
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(0,255,148,0.5)' }} />
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(0,255,148,0.8)' }} />
-        </div>
-        <span>More</span>
-      </div>
-    </div>
-  );
-};
-
 // Animated Counter Component - smoothly animates number changes
 const AnimatedCounter = ({ value, duration = 500, className = "" }) => {
   const [displayValue, setDisplayValue] = useState(value);
@@ -2900,11 +2760,20 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
 
   if (!isVisible) return null;
 
+  // 'error' covers anything that didn't happen (a failed save, a blocked action), so it
+  // must never wear the green check that 'success' uses.
+  const isError = type === 'error';
   const bgColor = type === 'record'
     ? 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)'
-    : 'rgba(0,255,148,0.1)';
-  const borderColor = type === 'record' ? 'rgba(255,215,0,0.3)' : 'rgba(0,255,148,0.3)';
-  const icon = type === 'record' ? '🏆' : '✓';
+    : isError ? 'rgba(255,69,58,0.12)' : 'rgba(0,255,148,0.1)';
+  const borderColor = type === 'record' ? 'rgba(255,215,0,0.3)' : isError ? 'rgba(255,69,58,0.35)' : 'rgba(0,255,148,0.3)';
+  const icon = type === 'record' ? '🏆' : isError ? (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ marginTop: 2 }}>
+      <circle cx="12" cy="12" r="10" stroke="#FF453A" strokeWidth="2" />
+      <path d="M12 7v6" stroke="#FF453A" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="12" cy="16.5" r="1.2" fill="#FF453A" />
+    </svg>
+  ) : '✓';
 
   return (
     <div
@@ -4416,7 +4285,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 <div className={`${isPostFormat ? 'space-y-1' : 'space-y-1.5'}`}>
                   <div className="flex justify-between items-center">
                     <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🏃 Longest Distance</span>
-                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{longestDist ? `${longestDist.toFixed(2)} mi` : '--'}</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{longestDist ? `${_shareMilesToUnit(longestDist).toFixed(2)} ${_shareUnitLabel}` : '--'}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🏃 Most Runs/Week</span>
@@ -4439,8 +4308,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostCaloriesDay ? records.mostCaloriesDay.toLocaleString() : (getRecordVal(records.highestCalories) || '--')}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>📍 Most Miles/Week</span>
-                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostMilesWeek ? `${records.mostMilesWeek.toFixed(1)} mi` : '--'}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>📍 Most {_shareUnitLabel === 'km' ? 'KMs' : 'Miles'}/Week</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostMilesWeek ? `${_shareMilesToUnit(records.mostMilesWeek).toFixed(1)} ${_shareUnitLabel}` : '--'}</span>
                   </div>
                 </div>
               </div>
@@ -4507,7 +4376,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         }
         // Show total hours if >= 1 hour
         if (weeklyAnalysis?.totalMinutes >= 60) {
-          achievements.push({ emoji: '⏱️', text: `${Math.round(weeklyAnalysis.totalMinutes / 60)}hrs total` });
+          const totalHrs = Math.round(weeklyAnalysis.totalMinutes / 60);
+          achievements.push({ emoji: '⏱️', text: `${totalHrs} ${totalHrs === 1 ? 'hr' : 'hrs'} total` });
         }
 
         // Slide 1: Progress
@@ -4677,8 +4547,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center flex flex-col justify-center`} style={{ backgroundColor: 'rgba(0,209,255,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Furthest Distance</div>
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} flex justify-center`}>{getActivityEmoji(weeklyAnalysis.longestDistance.type)}</div>
-                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#00D1FF' }}>{parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>miles</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#00D1FF' }}>{_shareMilesToUnit(weeklyAnalysis.longestDistance.distance).toFixed(2)}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>{_shareUnitLabel === 'km' ? 'km' : 'miles'}</div>
                   </div>
                 ) : weeklyAnalysis?.longestWorkout && (
                   <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center flex flex-col justify-center`} style={{ backgroundColor: 'rgba(0,255,148,0.08)' }}>
@@ -4871,7 +4741,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     🏃 {_shareMilesToUnit(stats?.monthlyMiles || 0).toFixed(1)} {_shareUnitLabel}
                   </span>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
-                    📅 {stats?.monthlyDaysActive || 0} days active
+                    📅 {stats?.monthlyDaysActive || 0} {(stats?.monthlyDaysActive || 0) === 1 ? 'day' : 'days'} active
                   </span>
                 </div>
               </div>
@@ -4900,24 +4770,30 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <CategoryIcon category="recovery" size={9} className="inline align-[-2px] mr-1" /><span className="font-bold" style={{ color: '#00D1FF' }}>{stats?.monthlyRecovery || 0}</span> recovery · bonus
                   </div>
 
-                  {/* Divider line */}
-                  <div className={`border-t border-gray-700 ${isPostFormat ? 'my-1.5' : 'my-2'}`}></div>
-
-                  {/* Most Frequent subsection */}
-                  <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase tracking-wider text-center mb-1`}>Most Frequent</div>
-                  <div className={`flex justify-center items-center ${isPostFormat ? 'gap-2' : 'gap-3'} text-center`}>
-                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: '#00FF94' }}>
-                      {stats?.monthlyMostFrequentStrength || 'Full Body'}
-                    </span>
-                    <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
-                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: '#FF9500' }}>
-                      {stats?.monthlyMostFrequentCardio || 'Running'}
-                    </span>
-                    <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
-                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: '#00D1FF' }}>
-                      {stats?.monthlyMostFrequentRecovery?.type || 'Sauna'}
-                    </span>
-                  </div>
+                  {/* Most Frequent: only the categories that have real data; the whole row
+                      hides when none do (it used to fall back to made-up names). */}
+                  {(() => {
+                    const freq = [
+                      { label: stats?.monthlyMostFrequentStrength, color: '#00FF94' },
+                      { label: stats?.monthlyMostFrequentCardio, color: '#FF9500' },
+                      { label: stats?.monthlyMostFrequentRecovery?.type, color: '#00D1FF' },
+                    ].filter(f => f.label);
+                    if (freq.length === 0) return null;
+                    return (
+                      <>
+                        <div className={`border-t border-gray-700 ${isPostFormat ? 'my-1.5' : 'my-2'}`}></div>
+                        <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase tracking-wider text-center mb-1`}>Most Frequent</div>
+                        <div className={`flex justify-center items-center ${isPostFormat ? 'gap-2' : 'gap-3'} text-center`}>
+                          {freq.map((f, i) => (
+                            <React.Fragment key={i}>
+                              {i > 0 && <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>}
+                              <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: f.color }}>{f.label}</span>
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Highlights Section - Best Burn, Longest Session, Furthest Distance */}
@@ -6482,7 +6358,7 @@ const ChangePasswordModal = ({ isOpen, onClose, user }) => {
 };
 
 // Delete Account Modal
-const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComplete }) => {
+const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComplete, showManageSubscription = false, onManageSubscription }) => {
   const [password, setPassword] = useState('');
   const [confirmText, setConfirmText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -6706,6 +6582,22 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
                     </ul>
                   </div>
                 </div>
+              </div>
+
+              {/* Billing: deleting the account leaves the App Store subscription running. */}
+              <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
+                <p className="text-white text-sm font-medium mb-1">Your subscription keeps running</p>
+                <p className="text-gray-400 text-sm">
+                  Deleting your account doesn't cancel an App Store subscription. Cancel it first so you aren't charged again.
+                </p>
+                {showManageSubscription && onManageSubscription && (
+                  <button
+                    onClick={onManageSubscription}
+                    className="mt-3 text-sm font-semibold text-white underline underline-offset-2"
+                  >
+                    Manage Subscription
+                  </button>
+                )}
               </div>
 
               <button
@@ -6955,12 +6847,12 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
     onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; },
   };
 
-  // Fitness goal options
+  // Fitness goal options. 'shredded' and 'lose-weight' are no longer offered (the app
+  // makes no weight-loss claims); their smartDefaults rows stay so the fallback lookup
+  // and any saved value still resolve.
   const fitnessGoalOptions = [
-    { value: 'shredded', emoji: '\uD83D\uDD25', label: 'Getting Shredded' },
     { value: 'faster', emoji: '\u26A1', label: 'Getting Faster' },
     { value: 'stronger', emoji: '\uD83D\uDCAA', label: 'Getting Stronger' },
-    { value: 'lose-weight', emoji: '\uD83C\uDFAF', label: 'Losing Weight' },
     { value: 'build-muscle', emoji: '\uD83C\uDFCB\uFE0F', label: 'Building Muscle' },
   ];
 
@@ -9483,7 +9375,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Focus Area Selection — shown for all flattened strength types */}
             {STRENGTH_TYPES.includes(activityType) && (
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
+                  Focus Areas
+                  {/* Save stays disabled until one is picked (same condition as the Save button) */}
+                  {focusAreas.length === 0 && !pendingActivity?.id && (
+                    <span className="normal-case tracking-normal text-gray-400 ml-2">Pick at least one to save</span>
+                  )}
+                </label>
                 <div className="grid grid-cols-3 gap-2">
                   {Object.entries(FOCUS_AREA_GROUPS).map(([groupName, members]) => {
                     const allSelected = members.every(m => focusAreas.includes(m));
@@ -11137,6 +11035,30 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
     const cardio = weekActivities.filter(countsAsCardio);
     const recovery = weekActivities.filter(countsAsRecovery);
 
+    // Goal breakdowns (tap a goal on Home). Built from the same lifts / cardio / recovery
+    // lists that fill the goal bars, so every session that filled a block shows up once,
+    // under its own type, and nothing that didn't count (warm-ups, plain walks) does.
+    const breakdownLabel = (a) => {
+      if (a.type === 'Other') return a.subtype || 'Other';
+      if (a.type === 'Strength Training') {
+        const st = a.strengthType || (a.subtype?.startsWith('Bodyweight') ? 'Bodyweight' : 'Weightlifting');
+        return st === 'Lifting' ? 'Weightlifting' : st;
+      }
+      if (a.type === 'Cycle') return 'Cycling';
+      if (a.type === 'Sports' && a.subtype) return a.subtype;
+      return a.type || 'Other';
+    };
+    const groupBreakdown = (list) => {
+      const groups = new Map();
+      list.forEach(a => {
+        const label = breakdownLabel(a);
+        const g = groups.get(label);
+        if (g) g.count += 1;
+        else groups.set(label, { label, count: 1, sample: a });
+      });
+      return [...groups.values()].sort((x, y) => y.count - x.count);
+    };
+
     // Cardio breakdown
     const running = weekActivities.filter(a => a.type === 'Running');
     const cycling = weekActivities.filter(a => a.type === 'Cycle');
@@ -11199,9 +11121,9 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
       : todayActivityCalories;
 
     return {
-      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length, circuit: circuit.length }, muscleGroups, otherActivities: otherStrength },
-      cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, otherActivities: otherCardio },
-      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length + contrastColdPlungeTally, sauna: sauna.length + contrastSaunaTally, contrastTherapy: contrastTherapy.length, coldShower: contrastColdShowerTally, hotPlunge: contrastHotPlungeTally, massage: massage.length, chiropractic: chiropractic.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
+      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length, circuit: circuit.length }, groups: groupBreakdown(lifts), muscleGroups, otherActivities: otherStrength },
+      cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, groups: groupBreakdown(cardio), otherActivities: otherCardio },
+      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length + contrastColdPlungeTally, sauna: sauna.length + contrastSaunaTally, contrastTherapy: contrastTherapy.length, coldShower: contrastColdShowerTally, hotPlunge: contrastHotPlungeTally, massage: massage.length, chiropractic: chiropractic.length, yoga: yoga.length, pilates: pilates.length }, groups: groupBreakdown(recovery), otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
       walks: { count: nonCardioWalks.length, activities: nonCardioWalks },
       // Use HealthKit active calories directly — wearables already track all active energy
@@ -12652,9 +12574,16 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             <div className="mt-4 pt-4 border-t border-white/10">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs text-gray-400">Muscle groups trained</div>
-                <div className="text-[10px] text-gray-500 flex items-center gap-1">
-                  <ActivityIcon type="Strength Training" strengthType="Weightlifting" size={10} /> {weekProgress.lifts?.breakdown?.lifting || 0} Weightlifting · <ActivityIcon type="Strength Training" strengthType="Bodyweight" size={10} /> {weekProgress.lifts?.breakdown?.bodyweight || 0} Bodyweight{weekProgress.lifts?.breakdown?.circuit ? <> · <ActivityIcon type="Strength Training" strengthType="Circuit" size={10} /> {weekProgress.lifts.breakdown.circuit} Circuit</> : ''}
-                </div>
+                {(weekProgress.lifts?.groups?.length || 0) > 0 && (
+                  <div className="text-[10px] text-gray-500 flex items-center gap-1 flex-wrap justify-end">
+                    {weekProgress.lifts.groups.map((g, i) => (
+                      <React.Fragment key={g.label}>
+                        {i > 0 && ' · '}
+                        <ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> {g.count} {g.label}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
               </div>
               {Object.keys(weekProgress.lifts?.muscleGroups || {}).length > 0 ? (
                 <div className="grid grid-cols-3 gap-2 text-center">
@@ -12675,27 +12604,18 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
           {showCardioBreakdown && (
             <div className="mt-4 pt-4 border-t border-white/10">
               <div className="text-xs text-gray-400 mb-2">Cardio Breakdown</div>
-              <div className={`grid gap-2 text-center`} style={{ gridTemplateColumns: `repeat(${3 + (weekProgress.cardio?.otherActivities?.length || 0)}, minmax(0, 1fr))` }}>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.running || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Running" size={10} /> Running</div>
+              {(weekProgress.cardio?.groups?.length || 0) > 0 ? (
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {weekProgress.cardio.groups.map((g) => (
+                    <div key={g.label} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                      <div className="text-lg font-bold">{g.count}</div>
+                      <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400 min-w-0"><ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> <span className="truncate">{g.label}</span></div>
+                    </div>
+                  ))}
                 </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.cycling || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Cycle" size={10} /> Cycling</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.sports || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Sports" size={10} /> Sports</div>
-                </div>
-                {/* Show each "Other" cardio activity */}
-                {weekProgress.cardio?.otherActivities?.map((activity, i) => (
-                  <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-bold">1</div>
-                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} customActivityCategory={activity.customActivityCategory} /> {activity.subtype || 'Other'}</div>
-                  </div>
-                ))}
-              </div>
+              ) : (
+                <div className="text-xs text-gray-500 text-center py-2">No cardio logged this week</div>
+              )}
             </div>
           )}
           
@@ -12703,55 +12623,18 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
           {showRecoveryBreakdown && (userData?.goals?.recoveryPerWeek ?? 2) > 0 && (
             <div className="mt-4 pt-4 border-t border-white/10">
               <div className="text-xs text-gray-400 mb-2">Recovery Breakdown</div>
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.coldPlunge || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Cold Plunge" size={10} /> Cold Plunge</div>
+              {(weekProgress.recovery?.groups?.length || 0) > 0 ? (
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {weekProgress.recovery.groups.map((g) => (
+                    <div key={g.label} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                      <div className="text-lg font-bold">{g.count}</div>
+                      <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400 min-w-0"><ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> <span className="truncate">{g.label}</span></div>
+                    </div>
+                  ))}
                 </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.sauna || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Sauna" size={10} /> Sauna</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.contrastTherapy || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Contrast Therapy" size={10} /> Contrast</div>
-                </div>
-                {(weekProgress.recovery?.breakdown?.coldShower || 0) > 0 && (
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.coldShower}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400">🚿 Cold Shower</div>
-                </div>
-                )}
-                {(weekProgress.recovery?.breakdown?.hotPlunge || 0) > 0 && (
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.hotPlunge}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400">♨️ Hot Plunge</div>
-                </div>
-                )}
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.massage || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Massage" size={10} /> Massage</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.chiropractic || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Chiropractic" size={10} /> Chiropractic</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.yoga || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Yoga" size={10} /> Yoga</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.pilates || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Pilates" size={10} /> Pilates</div>
-                </div>
-                {/* Show each "Other" recovery activity */}
-                {weekProgress.recovery?.otherActivities?.map((activity, i) => (
-                  <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-bold">1</div>
-                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} customActivityCategory={activity.customActivityCategory} /> {activity.subtype || 'Other'}</div>
-                  </div>
-                ))}
-              </div>
+              ) : (
+                <div className="text-xs text-gray-500 text-center py-2">No recovery logged this week</div>
+              )}
               {/* Only while Recovery really is a bonus: on the older rule the Winning Streak still
                   needs it, and a goal of 0 can never be met. */}
               {!recoveryNeeded && (
@@ -14352,7 +14235,7 @@ export default function DaySevenApp() {
       setShowToast(true);
     } catch (error) {
       setToastMessage('Failed to send reset email. Please try again.');
-      setToastType('success');
+      setToastType('error');
       setShowToast(true);
     }
   };
@@ -16770,7 +16653,7 @@ export default function DaySevenApp() {
   const activateInjuryMode = (durationWeeks, frozenCategories) => {
     if (userData.vacationMode?.isActive) {
       setToastMessage('Turn off vacation mode before starting injury mode');
-      setToastType('success');
+      setToastType('error');
       setShowToast(true);
       return;
     }
@@ -16780,7 +16663,7 @@ export default function DaySevenApp() {
     const remaining = INJURY_YEARLY_CAP - priorUsed;
     if (remaining < INJURY_MIN_WEEKS) {
       setToastMessage(`You've used your ${INJURY_YEARLY_CAP} injury weeks for this year`);
-      setToastType('success');
+      setToastType('error');
       setShowToast(true);
       return;
     }
@@ -16991,7 +16874,7 @@ export default function DaySevenApp() {
       } catch (error) {
         // Continue saving the activity without the photo, but notify user
         setToastMessage('Photo could not be uploaded. Activity saved without photo.');
-        setToastType('success');
+        setToastType('error');
         setShowToast(true);
       }
     }
@@ -18663,7 +18546,7 @@ export default function DaySevenApp() {
                     } else {
                       if (userData.injuryMode?.isActive) {
                         setToastMessage('Resume from injury mode before starting vacation mode');
-                        setToastType('success');
+                        setToastType('error');
                         setShowToast(true);
                         return;
                       }
@@ -18671,7 +18554,7 @@ export default function DaySevenApp() {
                       const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
                       if (used >= 3) {
                         setToastMessage('You\'ve used all 3 vacation activations this year');
-                        setToastType('success');
+                        setToastType('error');
                         setShowToast(true);
                         return;
                       }
@@ -18772,7 +18655,7 @@ export default function DaySevenApp() {
                 } else {
                   if (userData.injuryMode?.isActive) {
                     setToastMessage('Resume from injury mode before starting vacation mode');
-                    setToastType('success');
+                    setToastType('error');
                     setShowToast(true);
                     return;
                   }
@@ -18781,7 +18664,7 @@ export default function DaySevenApp() {
                   const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
                   if (used >= 3) {
                     setToastMessage('You\'ve used all 3 vacation activations this year');
-                    setToastType('success');
+                    setToastType('error');
                     setShowToast(true);
                     return;
                   }
@@ -19223,6 +19106,8 @@ export default function DaySevenApp() {
         onClose={() => setShowDeleteAccount(false)}
         user={user}
         userProfile={userProfile}
+        showManageSubscription={isPro && planType !== 'lifetime'}
+        onManageSubscription={presentCustomerCenter}
         onDeleteComplete={() => {
           setShowDeleteAccount(false);
           handleSignOut();
@@ -19653,6 +19538,7 @@ export default function DaySevenApp() {
           if (pendingToast) {
             setTimeout(() => {
               setToastMessage(pendingToast);
+              setToastType('record'); // pending toasts are always record toasts
               setShowToast(true);
               setPendingToast(null);
             }, 300);
@@ -19684,6 +19570,7 @@ export default function DaySevenApp() {
           if (pendingToast) {
             setTimeout(() => {
               setToastMessage(pendingToast);
+              setToastType('record'); // pending toasts are always record toasts
               setShowToast(true);
               setPendingToast(null);
             }, 300);
@@ -19954,6 +19841,7 @@ export default function DaySevenApp() {
         onClose={() => setChallengePickerForFriend(null)}
         activities={displayActivities}
         friend={challengePickerForFriend}
+        onLogWorkout={() => handleAddActivity(getTodayDate())}
         onPick={(activity) => {
           const friend = challengePickerForFriend;
           setChallengePickerForFriend(null);

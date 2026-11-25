@@ -18,6 +18,7 @@ import OwnProfileModal from './components/OwnProfileModal';
 import FriendProfileCard from './components/FriendProfileCard';
 import ChallengeDetailModal from './components/ChallengeDetailModal';
 import { isDemoAccount, getDemoChallenges } from './demoData';
+import { resolveUnit } from './utils/distance';
 
 const triggerHaptic = async (style = ImpactStyle.Light) => {
   try { await Haptics.impact({ style }); } catch {
@@ -433,6 +434,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
         <FriendProfileCard
           friend={selectedFriend}
           onClose={() => setSelectedFriend(null)}
+          distanceUnit={resolveUnit(userProfile)}
         />
       )}
 

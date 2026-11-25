@@ -1349,126 +1349,86 @@ export default function ProfilePage(props) {
             </div>
             
             {/* Slider Toggle */}
-            <div className="relative flex p-1 rounded-lg mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              {/* Sliding pill indicator */}
-              <div 
-                className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
-                style={{ 
+            <div className="relative flex p-1 mb-3.5" style={{ borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div
+                className="absolute top-1 bottom-1 transition-all duration-300 ease-out"
+                style={{
+                  borderRadius: 9,
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   width: 'calc((100% - 8px) / 2)',
                   left: compareWeek === 'average' ? '4px' : 'calc(4px + (100% - 8px) / 2)'
                 }}
               />
-              <button
-                onClick={() => setCompareWeek('average')}
-                className="flex-1 py-2 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
-                style={{ 
-                  color: compareWeek === 'average' ? 'white' : 'rgba(255,255,255,0.5)'
-                }}
-              >
-                vs Average
-              </button>
-              <button
-                onClick={() => setCompareWeek('week-2')}
-                className="flex-1 py-2 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
-                style={{ 
-                  color: compareWeek === 'week-2' ? 'white' : 'rgba(255,255,255,0.5)'
-                }}
-              >
-                vs Last Week
-              </button>
-            </div>
-            
-            {/* This Week Stats - With comparison arrows */}
-            <div className="p-4 rounded-2xl mb-2" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}>
-              <div className="text-xs text-gray-400 mb-3">This Week</div>
-              <div className="grid grid-cols-5 gap-2 text-center">
-                <div>
-                  <div className="text-lg font-black text-white">{currentWeekStats.lifts}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
-                  {(() => {
-                    const compare = compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0;
-                    if (currentWeekStats.lifts > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
-                    if (currentWeekStats.lifts < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
-                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
-                  })()}
-                </div>
-                <div>
-                  <div className="text-lg font-black text-white">{currentWeekStats.cardio}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
-                  {(() => {
-                    const compare = compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0;
-                    if (currentWeekStats.cardio > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
-                    if (currentWeekStats.cardio < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
-                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
-                  })()}
-                </div>
-                <div>
-                  <div className="text-lg font-black text-white">{(currentWeekStats.steps/1000).toFixed(1)}k</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
-                  {(() => {
-                    const compare = compareWeek === 'average' ? weeklyStats['average']?.steps || 0 : weeklyStats['week-2']?.steps || 0;
-                    if (currentWeekStats.steps > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
-                    if (currentWeekStats.steps < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
-                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
-                  })()}
-                </div>
-                <div>
-                  <div className="text-lg font-black text-white">{(currentWeekStats.calories/1000).toFixed(1)}k</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="calories" size={11} className="inline align-[-2px] mr-1" />Cals</div>
-                  {(() => {
-                    const compare = compareWeek === 'average' ? weeklyStats['average']?.calories || 0 : weeklyStats['week-2']?.calories || 0;
-                    if (currentWeekStats.calories > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
-                    if (currentWeekStats.calories < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
-                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
-                  })()}
-                </div>
-                <div>
-                  <div className="text-lg font-black text-white">{milesToDisplay(currentWeekStats.miles, distanceUnit).toFixed(1)}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">📍 {distanceUnit === 'km' ? 'KM' : 'Miles'}</div>
-                  {(() => {
-                    const compare = compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0;
-                    if (currentWeekStats.miles > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
-                    if (currentWeekStats.miles < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
-                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
-                  })()}
-                </div>
-              </div>
+              {[['average', 'vs Your average'], ['week-2', 'vs Last week']].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setCompareWeek(key)}
+                  className="flex-1 py-2 transition-colors duration-200 relative z-10"
+                  style={{ fontSize: 13, fontWeight: 600, color: compareWeek === key ? '#fff' : '#888' }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
-            {/* Comparison Stats - With placeholder for uniform height */}
-            <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-xs text-gray-400 mb-3">
-                {compareWeek === 'average' ? 'Your Average Week' : 'Last Week'}
-              </div>
-              <div className="grid grid-cols-5 gap-2 text-center">
-                <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
-                  <div className="text-[10px] mt-1 opacity-0">-</div>
+            {/* One card (Felipe's option D, mock compares.D): category icons on top, this week
+                with its difference, then your average (or last week). No green, no red. */}
+            {(() => {
+              const other = weeklyStats[compareWeek === 'average' ? 'average' : 'week-2'] || {};
+              const num = (n) => (Number.isInteger(n) ? String(n) : (Math.round(n * 10) / 10).toFixed(1).replace(/\.0$/, ''));
+              const k = (n) => `${(n / 1000).toFixed(1)}k`;
+              const mi = (n) => milesToDisplay(n, distanceUnit).toFixed(1);
+              const cols = [
+                { key: 'lifts', icon: <CategoryIcon category="lifts" size={15} />, label: 'Strength', now: currentWeekStats.lifts || 0, then: other.lifts || 0, f: num, df: num },
+                { key: 'cardio', icon: <CategoryIcon category="cardio" size={15} />, label: 'Cardio', now: currentWeekStats.cardio || 0, then: other.cardio || 0, f: num, df: num },
+                { key: 'steps', icon: <CategoryIcon category="steps" size={15} />, label: 'Steps', now: currentWeekStats.steps || 0, then: other.steps || 0, f: k, df: k },
+                { key: 'calories', icon: <CategoryIcon category="calories" size={15} />, label: 'Cals', now: currentWeekStats.calories || 0, then: other.calories || 0, f: k, df: k },
+                { key: 'miles', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF9500" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z" /></svg>, label: distanceUnit === 'km' ? 'Km' : 'Miles', now: currentWeekStats.miles || 0, then: other.miles || 0, f: mi, df: mi },
+              ];
+              const Grid = ({ children }) => <div className="grid grid-cols-5 gap-1 text-center">{children}</div>;
+              const Divider = () => <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px 6px' }} />;
+              const RowLabel = ({ children }) => <div style={{ ...CAPS_LABEL, fontSize: 9.5, margin: '0 8px 8px' }}>{children}</div>;
+              return (
+                <div style={{ ...CARD_SURFACE, padding: '14px 8px' }}>
+                  <Grid>
+                    {cols.map((c) => (
+                      <div key={c.key} className="flex flex-col items-center gap-1">
+                        {c.icon}
+                        <span style={{ ...CAPS_LABEL, fontSize: 8.5, letterSpacing: '0.1em' }}>{c.label}</span>
+                      </div>
+                    ))}
+                  </Grid>
+                  <Divider />
+                  <RowLabel>This week</RowLabel>
+                  <Grid>
+                    {cols.map((c) => {
+                      const d = c.now - c.then;
+                      const up = d >= 0;
+                      return (
+                        <div key={c.key}>
+                          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.2px' }}>{c.f(c.now)}</div>
+                          <div style={{ marginTop: 5 }}>
+                            {d === 0 ? <span style={{ fontSize: 12.5, fontWeight: 700, color: '#666' }}>—</span> : (
+                              <span className="inline-flex items-center gap-[2px]" style={{ fontSize: 12.5, fontWeight: 700, color: up ? '#fff' : '#8a8a8a' }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={up ? '#fff' : '#8a8a8a'} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={up ? 'M12 19V5M5 12l7-7 7 7' : 'M12 5v14M5 12l7 7 7-7'} /></svg>
+                                {up ? '+' : '−'}{c.df(Math.abs(d))}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </Grid>
+                  <Divider />
+                  <RowLabel>{compareWeek === 'average' ? 'Your average' : 'Last week'}</RowLabel>
+                  <Grid>
+                    {cols.map((c) => (
+                      <div key={c.key} style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.2px', color: '#9a9a9a' }}>{c.f(c.then)}</div>
+                    ))}
+                  </Grid>
                 </div>
-                <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
-                  <div className="text-[10px] mt-1 opacity-0">-</div>
-                </div>
-                <div>
-                  <div className="text-lg font-black">{(((compareWeek === 'average' ? weeklyStats['average']?.steps : weeklyStats['week-2']?.steps) || 0)/1000).toFixed(1)}k</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
-                  <div className="text-[10px] mt-1 opacity-0">-</div>
-                </div>
-                <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? ((weeklyStats['average']?.calories || 0)/1000).toFixed(1) + 'k' : ((weeklyStats['week-2']?.calories || 0)/1000).toFixed(1) + 'k'}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="calories" size={11} className="inline align-[-2px] mr-1" />Cals</div>
-                  <div className="text-[10px] mt-1 opacity-0">-</div>
-                </div>
-                <div>
-                  <div className="text-lg font-black">{milesToDisplay(compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0, distanceUnit).toFixed(1)}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">📍 {distanceUnit === 'km' ? 'KM' : 'Miles'}</div>
-                  <div className="text-[10px] mt-1 opacity-0">-</div>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1604,133 +1564,96 @@ export default function ProfilePage(props) {
               opacity: dayModalAnimating ? 1 : 0
             }}
           >
-            <div className="flex items-center justify-between p-4 border-b border-white/10" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
-              <button 
-                onClick={() => closeDayModal()} 
-                className="text-gray-400 transition-all duration-150 px-2 py-1 rounded-lg"
-                onTouchStart={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.9)';
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                }}
-                onTouchEnd={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.9)';
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
+            <div className="flex items-center justify-between" style={{ padding: '14px 16px', paddingTop: 'calc(env(safe-area-inset-top, 0px) + 14px)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <button
+                onClick={() => closeDayModal()}
+                className="flex items-center gap-1 transition-opacity active:opacity-60"
+                style={{ fontSize: 15, color: '#aaa' }}
               >
-                ← Back
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+                Back
               </button>
-              <h2 className="font-bold">{formattedDate}</h2>
-              <button 
+              <h2 className="font-bold" style={{ fontSize: 16 }}>{formattedDate}</h2>
+              <button
                 onClick={() => {
                   closeDayModal();
                   onAddActivity && onAddActivity(selectedDate);
                 }}
-                className="text-sm font-medium transition-all duration-150 px-2 py-1 rounded-lg"
-                style={{ color: '#00FF94' }}
-                onTouchStart={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.9)';
-                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
-                }}
-                onTouchEnd={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.9)';
-                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
+                className="flex items-center gap-[5px] bg-white text-black active:bg-[#e5e5e5] transition-colors"
+                style={{ padding: '6px 12px', borderRadius: 999, fontSize: 13, fontWeight: 700 }}
               >
-                + Add
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                Add
               </button>
             </div>
             
             <div className="flex-1 overflow-auto p-4">
-              {/* Summary Stats */}
-              <div className="grid grid-cols-3 gap-2 mb-4">
-                <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-                  <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
-                  <div className="text-[10px] text-gray-400"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
-                </div>
-                <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-                  <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{cardioActivities.length}</div>
-                  <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
-                </div>
-                <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(191,90,242,0.1)' }}>
-                  <div className="text-2xl font-black" style={{ color: '#BF5AF2' }}>{daySteps >= 10000 ? `${(daySteps / 1000).toFixed(1)}k` : daySteps.toLocaleString()}</div>
-                  <div className="text-[10px] text-gray-400"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
-                </div>
-              </div>
-
-              {/* Recovery: a bonus, same slim row as Stats and Settings */}
-              <div className="-mt-2 mb-4 px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
-                <div className="flex items-center gap-2">
-                  <CategoryIcon category="recovery" size={13} />
-                  <span className="text-xs text-white">Recovery</span>
-                  <span className="text-xs font-bold" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</span>
-                </div>
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
-              </div>
-
-              {/* Daily Totals */}
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <SectionIcon type="chart" />
-                  <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Daily Totals</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,107,107,0.1)' }}>
-                    <div className="text-lg font-black" style={{ color: '#FF6B6B' }}>{dayCalories.toLocaleString()}</div>
-                    <div className="text-[10px] text-gray-400">Calories Burned</div>
+              {/* One card like Stats Overview (Nov 2026 redesign, mock daySheet('new')) */}
+              {(() => {
+                const mins = fullDayActivities.reduce((sum, a) => sum + (parseInt(a.duration, 10) || 0), 0);
+                const activeTime = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+                const workouts = fullDayActivities.filter(a => countsAsLifting(a) || countsAsCardio(a)).length;
+                const DayRow = ({ cat, name, value, bonus = false }) => (
+                  <div className="flex items-center gap-2.5" style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    <CategoryIcon category={cat} size={16} />
+                    <span className="flex-1 flex items-center gap-2" style={{ fontSize: 14, fontWeight: 600 }}>
+                      {name}
+                      {bonus && <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', padding: '2px 6px', borderRadius: 999, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.22)', color: '#aaa' }}>BONUS</span>}
+                    </span>
+                    <span style={{ ...NUM.value, color: value ? '#fff' : '#666' }}>{value}</span>
                   </div>
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-black">{dayMiles ? formatDistanceValue(dayMiles, distanceUnit, 1) : 0} {distanceUnitText}</div>
-                    <div className="text-[10px] text-gray-400">Distance Traveled</div>
+                );
+                return (
+                  <div style={{ ...CARD_SURFACE, padding: '18px 20px 8px', marginBottom: 18 }}>
+                    <div className="flex items-end justify-between" style={{ paddingBottom: 14, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                      <div>
+                        <div style={{ ...NUM.big, lineHeight: 0.8 }}>{workouts}</div>
+                        <div style={{ ...CAPS_LABEL, marginTop: 10 }}>{workouts === 1 ? 'Workout' : 'Workouts'}</div>
+                      </div>
+                      <div className="text-right">
+                        <div style={NUM.value}>{activeTime}</div>
+                        <div style={{ ...CAPS_LABEL, marginTop: 6 }}>Active time</div>
+                      </div>
+                    </div>
+                    <DayRow cat="lifts" name="Strength" value={lifts.length} />
+                    <DayRow cat="cardio" name="Cardio" value={cardioActivities.length} />
+                    <DayRow cat="steps" name="Steps" value={daySteps >= 10000 ? `${(daySteps / 1000).toFixed(1)}k` : daySteps.toLocaleString()} />
+                    <DayRow cat="recovery" name="Recovery" bonus value={recoveryActivities.length} />
+                    <div className="flex" style={{ gap: 28, padding: '12px 0 8px' }}>
+                      <div>
+                        <div className="flex items-center gap-1.5" style={NUM.value}><CategoryIcon category="calories" size={14} />{dayCalories.toLocaleString()}</div>
+                        <div style={{ ...CAPS_LABEL, fontSize: 10, marginTop: 5 }}>Calories</div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5" style={NUM.value}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z" /></svg>
+                          {dayMiles ? formatDistanceValue(dayMiles, distanceUnit, 1) : 0}<span style={{ ...NUM.valueSmall, marginLeft: 2 }}>{distanceUnitText}</span>
+                        </div>
+                        <div style={{ ...CAPS_LABEL, fontSize: 10, marginTop: 5 }}>Distance</div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-black">{fullDayActivities.reduce((sum, a) => sum + (a.duration || 0), 0)} min</div>
-                    <div className="text-[10px] text-gray-400">Total Duration</div>
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
 
-              {/* Activities Completed Header */}
-              <div className="mb-4">
-                <div className="flex items-center gap-2">
-                  <SectionIcon type="activity" />
-                  <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Activities Completed</span>
-                </div>
-                <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Swipe left to delete, tap for details</p>
-              </div>
-
+              {/* Activities completed: Latest Activity's rows */}
+              <div style={{ ...CAPS_LABEL, margin: '0 2px 10px' }}>Activities completed</div>
               <SwipeableProvider>
-              {/* Strength Section */}
-              {lifts.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</span>
-                  </div>
-                  <div className="space-y-2">
-                    {lifts.map((activity, i) => (
+                <div className="space-y-2">
+                  {[...lifts, ...cardioActivities.filter(a => !lifts.includes(a)), ...recoveryActivities, ...nonCardioWalks].map((activity, i) => {
+                    const cat = getActivityCategory(activity);
+                    const hex = cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : (cat === 'lifting' || cat === 'lifting+cardio') ? '#00FF94' : null;
+                    const name = activity.type === 'Strength Training'
+                      ? (() => { const areas = normalizeFocusAreas(activity.focusAreas || (activity.focusArea ? [activity.focusArea] : [])); const st = activity.strengthType || activity.subtype || 'Strength Training'; return areas.length > 0 ? `${st} · ${areas.join(', ')}` : st; })()
+                      : (activity.type === 'Other' ? (activity.subtype || 'Other') : (activity.subtype ? `${activity.type} · ${activity.subtype}` : activity.type));
+                    const meta = [
+                      activity.duration ? `${activity.duration} min` : null,
+                      activity.calories ? `${activity.calories} cal` : null,
+                      parseFloat(activity.distance) > 0 ? `${formatDistanceValue(activity.distance, distanceUnit, 1)} ${distanceUnitText}` : null,
+                      activity.avgHr ? `♥ ${activity.avgHr}` : null,
+                    ].filter(Boolean).join(' · ');
+                    const fromHealth = activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth;
+                    return (
                       <SwipeableActivityItem
                         key={activity.id || i}
                         activity={activity}
@@ -1738,176 +1661,32 @@ export default function ProfilePage(props) {
                       >
                         <div
                           onClick={() => setSelectedDayActivity(activity)}
-                          className="w-full p-3 text-left cursor-pointer"
-                          style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}
+                          className="w-full flex items-center gap-3 text-left cursor-pointer transition-opacity active:opacity-70"
+                          style={{ backgroundColor: '#0D0D0D', padding: '12px 14px' }}
                         >
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
-                              {activity.type === 'Strength Training'
-                                ? (() => { const areas = normalizeFocusAreas(activity.focusAreas || (activity.focusArea ? [activity.focusArea] : [])); return activity.subtype ? `${activity.subtype}${areas.length > 0 ? ` • ${areas.join(', ')}` : ''}` : (areas.length > 0 ? `Strength Training • ${areas.join(', ')}` : 'Strength Training'); })()
-                                : (activity.type === 'Other' ? (activity.subtype || 'Other') : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type))}
+                          <div className="flex items-center justify-center flex-shrink-0" style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: hex ? `rgba(${hexToRgb(hex)},0.16)` : 'rgba(255,255,255,0.06)' }}>
+                            <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} color={hex || undefined} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate" style={{ fontSize: 15, fontWeight: 600 }}>{name}</div>
+                            <div className="flex items-center gap-1.5 min-w-0" style={{ fontSize: 12.5, color: '#8a8a8a', marginTop: 2 }}>
+                              <span className="truncate">{meta}</span>
+                              {fromHealth && (
+                                <span className="flex items-center gap-[3px] flex-shrink-0" style={{ color: '#aaa', marginLeft: 4 }}>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                                  {activity.sourceDevice === 'Apple Watch' ? 'Watch' : (activity.sourceDevice || 'Health')}
+                                </span>
+                              )}
                             </div>
-                            <span className="text-gray-500 text-xs">›</span>
                           </div>
-                          <div className="flex gap-4 text-xs text-gray-400">
-                            {activity.duration && <span>{activity.duration} min</span>}
-                            {activity.calories && <span>{activity.calories} cal</span>}
-                            {activity.avgHr && <span>♥ {activity.avgHr}</span>}
-                            {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                              <span className="flex items-center gap-1 text-cyan-400">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                                </svg>
-                                {activity.sourceDevice || 'Apple Health'}
-                              </span>
-                            )}
-                          </div>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
                         </div>
                       </SwipeableActivityItem>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              )}
-
-              {/* Cardio Section */}
-              {cardioActivities.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300"><CategoryIcon category="cardio" size={12} className="inline align-[-2px] mr-1" />Cardio</span>
-                  </div>
-                  <div className="space-y-2">
-                    {cardioActivities.map((activity, i) => (
-                      <SwipeableActivityItem
-                        key={activity.id || i}
-                        activity={activity}
-                        onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
-                      >
-                        <div
-                          onClick={() => setSelectedDayActivity(activity)}
-                          className="w-full p-3 text-left cursor-pointer"
-                          style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
-                              {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
-                            </div>
-                            <span className="text-gray-500 text-xs">›</span>
-                          </div>
-                          <div className="flex gap-4 text-xs text-gray-400">
-                            {activity.distance && <span>{formatDistanceValue(activity.distance, distanceUnit, 2)} {distanceUnitText}</span>}
-                            {activity.duration && <span>{activity.duration} min</span>}
-                            {activity.calories && <span>{activity.calories} cal</span>}
-                            {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                              <span className="flex items-center gap-1 text-cyan-400">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                                </svg>
-                                {activity.sourceDevice || 'Apple Health'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </SwipeableActivityItem>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Recovery Section */}
-              {recoveryActivities.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
-                  </div>
-                  <div className="space-y-2">
-                    {recoveryActivities.map((activity, i) => (
-                      <SwipeableActivityItem
-                        key={activity.id || i}
-                        activity={activity}
-                        onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
-                      >
-                        <div
-                          onClick={() => setSelectedDayActivity(activity)}
-                          className="w-full p-3 text-left cursor-pointer"
-                          style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
-                              {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
-                            </div>
-                            <span className="text-gray-500 text-xs">›</span>
-                          </div>
-                          <div className="flex gap-4 text-xs text-gray-400">
-                            {activity.duration && <span>{activity.duration} min</span>}
-                            {activity.calories && <span>{activity.calories} cal</span>}
-                            {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                              <span className="flex items-center gap-1 text-cyan-400">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                                </svg>
-                                {activity.sourceDevice || 'Apple Health'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </SwipeableActivityItem>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Non-Cardio Walks Section */}
-              {nonCardioWalks.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-400">🚶 Walks</span>
-                    <span className="text-[10px] text-gray-500">(non-cardio)</span>
-                  </div>
-                  <div className="space-y-2">
-                    {nonCardioWalks.map((activity, i) => (
-                      <SwipeableActivityItem
-                        key={activity.id || i}
-                        activity={activity}
-                        onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
-                      >
-                        <div
-                          onClick={() => setSelectedDayActivity(activity)}
-                          className="w-full p-3 text-left cursor-pointer"
-                          style={{ backgroundColor: 'rgba(128,128,128,0.05)' }}
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.subtype ? `Walking • ${activity.subtype}` : 'Walking'}
-                            </div>
-                            <span className="text-gray-500 text-xs">›</span>
-                          </div>
-                          <div className="flex gap-4 text-xs text-gray-400">
-                            {activity.distance && <span>{formatDistanceValue(activity.distance, distanceUnit, 2)} {distanceUnitText}</span>}
-                            {activity.duration && <span>{activity.duration} min</span>}
-                            {activity.calories && <span>{activity.calories} cal</span>}
-                            {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                              <span className="flex items-center gap-1 text-cyan-400">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                                </svg>
-                                {activity.sourceDevice || 'Apple Health'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </SwipeableActivityItem>
-                    ))}
-                  </div>
-                </div>
-              )}
               </SwipeableProvider>
+              <p className="text-center" style={{ fontSize: 12, color: '#666', marginTop: 12 }}>Swipe left to delete, tap for details</p>
             </div>
           </div>
         );

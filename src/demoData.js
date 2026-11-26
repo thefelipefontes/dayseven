@@ -500,6 +500,10 @@ export const getDemoHealthHistory = (days = 365) => {
 // `weekly` is per-week activity volume; period totals (week/month/year/all) are
 // expanded by simple multipliers below. Streaks/challenge stats are shown as-is.
 //
+// `bests` are their records on the profile card: longest run and most miles in a week
+// (every activity, so rides count) in miles, top calorie workout, fastest run pace per
+// mile, and longest streaks in weeks. Streak bests must stay >= the current streaks.
+//
 // Photos live in public/demo-avatars/ so the demo works offline. Alex, Sarah and Mike are
 // crops of their own feed photos (public/demo-feed/); the other six are free photos from
 // Unsplash (Unsplash License: free for commercial use, no attribution required), cropped:
@@ -517,6 +521,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 6, strength: 10, cardio: 6, steps: 9, recovery: 5, longestMaster: 12 },
     challengeStats: { accepted: 16, wins: 12, losses: 4, currentWinStreak: 2, longestWinStreak: 5 },
     weeksWon: 6,
+    bests: { run: 8.1, calories: 742, pace: '7:48', milesWeek: 36.4, strength: 14, cardio: 12, steps: 15, recovery: 8 },
     weekly: { calories: 3400, steps: 62000, runs: 2, miles: 12, runMinutes: 105, strengthSessions: 3, liftingMinutes: 180, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, cardioSessions: 3, rides: 1, cycleMiles: 16, cycleMinutes: 55 } },
 
   // 2) Sarah — runner + challenge winner. #1 in challenge wins / longest win streak.
@@ -525,6 +530,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 12, strength: 12, cardio: 28, steps: 20, recovery: 9, longestMaster: 30 },
     challengeStats: { accepted: 22, wins: 15, losses: 7, currentWinStreak: 4, longestWinStreak: 8 },
     weeksWon: 14,
+    bests: { run: 13.1, calories: 1046, pace: '6:52', milesWeek: 47.2, strength: 30, cardio: 36, steps: 32, recovery: 12 },
     weekly: { calories: 3100, steps: 78000, runs: 3, miles: 22, runMinutes: 200, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, cardioSessions: 5, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },
 
   // 3) Mike — lifter. #1 in strengthSessions / liftingMinutes.
@@ -533,6 +539,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 9, strength: 22, cardio: 9, steps: 11, recovery: 8, longestMaster: 18 },
     challengeStats: { accepted: 20, wins: 14, losses: 6, currentWinStreak: 3, longestWinStreak: 6 },
     weeksWon: 9,
+    bests: { run: 3.1, calories: 812, pace: '9:12', milesWeek: 6.2, strength: 31, cardio: 18, steps: 20, recovery: 11 },
     weekly: { calories: 2900, steps: 34000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 5, liftingMinutes: 300, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, cardioSessions: 6, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
 
   // 4) Emma — yogi. #1 in master streak / yogaSessions.
@@ -541,6 +548,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 14, strength: 14, cardio: 16, steps: 18, recovery: 28, longestMaster: 35 },
     challengeStats: { accepted: 14, wins: 9, losses: 5, currentWinStreak: 1, longestWinStreak: 4 },
     weeksWon: 18,
+    bests: { run: 6.2, calories: 615, pace: '8:36', milesWeek: 21.5, strength: 35, cardio: 37, steps: 38, recovery: 33 },
     weekly: { calories: 2600, steps: 48000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 2, liftingMinutes: 90, recoverySessions: 3, coldPlunges: 0, saunaSessions: 0, yogaSessions: 3, cardioSessions: 7, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
 
   // 5) Jake — overall powerhouse. #1 in calories.
@@ -549,6 +557,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 16, strength: 16, cardio: 18, steps: 17, recovery: 6, longestMaster: 22 },
     challengeStats: { accepted: 24, wins: 16, losses: 8, currentWinStreak: 2, longestWinStreak: 7 },
     weeksWon: 11,
+    bests: { run: 10.4, calories: 1284, pace: '7:00', milesWeek: 44.8, strength: 24, cardio: 26, steps: 23, recovery: 10 },
     weekly: { calories: 4200, steps: 72000, runs: 3, miles: 18, runMinutes: 165, strengthSessions: 3, liftingMinutes: 195, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, cardioSessions: 4, rides: 1, cycleMiles: 18, cycleMinutes: 60 } },
 
   // 6) Lisa — runner + step queen. #1 in steps / runs / miles / cardioStreak.
@@ -557,6 +566,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 8, strength: 8, cardio: 32, steps: 25, recovery: 5, longestMaster: 24 },
     challengeStats: { accepted: 14, wins: 10, losses: 4, currentWinStreak: 1, longestWinStreak: 5 },
     weeksWon: 10,
+    bests: { run: 15.5, calories: 1138, pace: '7:15', milesWeek: 41.3, strength: 24, cardio: 38, steps: 31, recovery: 8 },
     weekly: { calories: 3600, steps: 88000, runs: 4, miles: 30, runMinutes: 270, strengthSessions: 1, liftingMinutes: 40, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, cardioSessions: 4, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
 
   // 7) Noah — recovery specialist. #1 in recoverySessions / coldPlunges / saunaSessions.
@@ -565,6 +575,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 9, strength: 12, cardio: 9, steps: 10, recovery: 18, longestMaster: 14 },
     challengeStats: { accepted: 12, wins: 8, losses: 4, currentWinStreak: 0, longestWinStreak: 3 },
     weeksWon: 5,
+    bests: { run: 4.0, calories: 690, pace: '8:54', milesWeek: 18.6, strength: 17, cardio: 14, steps: 15, recovery: 24 },
     weekly: { calories: 2400, steps: 42000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 1, liftingMinutes: 60, recoverySessions: 4, coldPlunges: 2, saunaSessions: 2, yogaSessions: 0, cardioSessions: 1, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
 
   // 8) Maya — strength runner-up. Tied for #1 currentWinStreak.
@@ -573,6 +584,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 7, strength: 18, cardio: 7, steps: 8, recovery: 12, longestMaster: 14 },
     challengeStats: { accepted: 18, wins: 12, losses: 6, currentWinStreak: 5, longestWinStreak: 6 },
     weeksWon: 8,
+    bests: { run: 5.0, calories: 780, pace: '8:24', milesWeek: 9.4, strength: 23, cardio: 14, steps: 16, recovery: 15 },
     weekly: { calories: 3300, steps: 50000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 4, liftingMinutes: 260, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, cardioSessions: 1, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
 
   // 9) Leo — cyclist. #1 in rides / cycleMiles / cycleMinutes. Tied for #1 currentWinStreak.
@@ -581,6 +593,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 5, strength: 5, cardio: 22, steps: 15, recovery: 7, longestMaster: 19 },
     challengeStats: { accepted: 19, wins: 11, losses: 8, currentWinStreak: 5, longestWinStreak: 4 },
     weeksWon: 7,
+    bests: { run: 7.4, calories: 1190, pace: '7:36', milesWeek: 74.5, strength: 19, cardio: 27, steps: 21, recovery: 10 },
     weekly: { calories: 3500, steps: 54000, runs: 1, miles: 5, runMinutes: 45, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, cardioSessions: 4, rides: 3, cycleMiles: 52, cycleMinutes: 175 } },
 
   // 10) Kai — well-rounded #2 across multiple. High master streak.
@@ -589,6 +602,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 10, strength: 10, cardio: 12, steps: 11, recovery: 14, longestMaster: 26 },
     challengeStats: { accepted: 16, wins: 10, losses: 6, currentWinStreak: 3, longestWinStreak: 4 },
     weeksWon: 12,
+    bests: { run: 9.3, calories: 905, pace: '7:30', milesWeek: 29.8, strength: 26, cardio: 29, steps: 27, recovery: 19 },
     weekly: { calories: 3000, steps: 58000, runs: 2, miles: 8, runMinutes: 75, strengthSessions: 2, liftingMinutes: 120, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, cardioSessions: 3, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },
 ];
 
@@ -620,6 +634,32 @@ export const getDemoFriends = () => {
     longestMasterStreak: p.streaks.longestMaster,
     challengeStats: p.challengeStats,
   }));
+};
+
+// What a demo friend's FriendProfileCard shows, shaped like the user doc fields the card
+// reads. Demo friends have no user doc, so without it the card fell back to whatever the
+// tapping screen passed in: zeros from the Feed, and no records from anywhere. Null for
+// anyone who isn't a demo friend.
+export const getDemoFriendProfile = (uid) => {
+  const p = DEMO_FRIEND_PROFILES.find(f => f.uid === uid);
+  if (!p) return null;
+  const { streaks: s, bests: b } = p;
+  const [paceMin, paceSec] = b.pace.split(':').map(Number);
+  return {
+    streaks: { master: s.master, lifts: s.strength, cardio: s.cardio, steps: s.steps ?? s.master, recovery: s.recovery },
+    challengeStats: p.challengeStats,
+    personalRecords: {
+      longestDistance: { value: b.run, activityType: 'Running' },
+      highestCalories: { value: b.calories },
+      fastestPace: { value: paceMin + paceSec / 60, activityType: 'Running' }, // minutes per mile
+      mostMilesWeek: b.milesWeek,
+      longestMasterStreak: s.longestMaster,
+      longestStrengthStreak: b.strength,
+      longestCardioStreak: b.cardio,
+      longestStepsStreak: b.steps,
+      longestRecoveryStreak: b.recovery,
+    },
+  };
 };
 
 // Leaderboard rows for demo accounts. Same identity as getDemoFriends + the

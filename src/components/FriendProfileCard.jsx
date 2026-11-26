@@ -1,8 +1,9 @@
 import AvatarImage from './AvatarImage';
 import CategoryIcon from './CategoryIcon';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getUserProfile } from '../services/userService';
+import { getDemoFriendProfile } from '../demoData';
 import { friendStatus, FRIEND_STATUS } from '../utils/friendStatus';
 import ZoomablePhoto from './ZoomablePhoto';
 import { formatDistanceValue, formatPace as formatPaceForUnit, unitLabel } from '../utils/distance';
@@ -59,8 +60,10 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   const [isAnimating, setIsAnimating] = useState(false);
   // When `preloadedProfile` is provided (e.g., the current user's own card — App already
   // has userProfile + userData loaded and live-subscribed), seed state with it and skip
-  // the network fetch. Otherwise lazy-fetch on mount via getUserProfile.
-  const [profile, setProfile] = useState(preloadedProfile || null);
+  // the network fetch. Otherwise lazy-fetch on mount via getUserProfile. The demo
+  // account's friends have no user doc to fetch, so their demo profile stands in for it.
+  const demoProfile = useMemo(() => getDemoFriendProfile(friend?.uid), [friend?.uid]);
+  const [profile, setProfile] = useState(preloadedProfile || demoProfile || null);
   const [showFullPhoto, setShowFullPhoto] = useState(false);
 
   useEffect(() => {
@@ -103,7 +106,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   // preloadedProfile was provided — saves an unnecessary round-trip for own-profile.
   useEffect(() => {
     let cancelled = false;
-    if (preloadedProfile) return;
+    if (preloadedProfile || demoProfile) return;
     if (!friend?.uid || !statsVisible) return;
     (async () => {
       try {
@@ -112,7 +115,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [friend?.uid, preloadedProfile, statsVisible]);
+  }, [friend?.uid, preloadedProfile, demoProfile, statsVisible]);
 
   const handleClose = () => {
     setIsAnimating(false);

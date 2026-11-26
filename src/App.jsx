@@ -14516,6 +14516,10 @@ export default function DaySevenApp() {
   // Refresh data function for pull-to-refresh
   const refreshData = useCallback(async () => {
     if (!user?.uid) return;
+    // Demo accounts: nothing to refresh. Their data is mocked at load, and every reload
+    // below reads Firestore, which would swap the demo week, trends and friends for the
+    // account's real, mostly empty data (same as the foreground re-sync skip).
+    if (isDemoAccount(userProfileRef.current, userRef.current)) return;
 
     try {
       // Reload activities — force refresh to pick up watch workouts
@@ -19252,8 +19256,9 @@ export default function DaySevenApp() {
           onClose={async () => {
             setShowFriends(false);
             setFriendsInitialTab('friends');
-            // Refresh friends and pending requests after modal closes
-            if (user) {
+            // Refresh friends and pending requests after modal closes. Demo accounts keep
+            // their mock friends: the real list in Firestore would replace all ten.
+            if (user && !isDemoAccount(userProfile, user)) {
               const friendsList = await getFriends(user.uid);
               setFriends(friendsList);
               friendsList.forEach(f => { if (f.photoURL) { const img = new Image(); img.src = f.photoURL; } });

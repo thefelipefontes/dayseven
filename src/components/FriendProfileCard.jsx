@@ -163,25 +163,27 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   // WKWebView found a way to route the gesture to the nearest scrollable ancestor.
   return createPortal(
     <>
-      {/* Overlay is the scroll container — iOS WKWebView handles this much more reliably
-          than the "fixed-height card with internal-scroll body" pattern (which kept letting
-          touch-moves leak through to #root). The card sits naturally; if its content fits
-          within the viewport the inner flex centers it, otherwise the overlay scrolls. */}
+      {/* The card stays between the status bar and the home indicator. When it's taller
+          than that space (on most phones, with records and bests), the photo and stats
+          scroll inside the card and the buttons stay pinned at the bottom. The overlay
+          itself doesn't scroll, and the portal keeps touches away from #root, so a drag
+          can't move the page underneath. */}
       <div
-        className="fixed inset-0 z-[60] overflow-y-auto transition-all duration-300"
+        className="fixed inset-0 z-[60] flex items-center justify-center transition-all duration-300"
         style={{
           backgroundColor: isAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)',
-          WebkitOverflowScrolling: 'touch',
-          // `none` (vs `contain`) also suppresses rubber-banding past the overlay's edges,
-          // which iOS otherwise uses as an excuse to scroll the page underneath.
+          padding: 'calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 12px)',
           overscrollBehavior: 'none',
         }}
         onClick={handleClose}
       >
-        <div className="min-h-full flex items-center justify-center p-4">
         <div
-          className="relative w-full max-w-sm overflow-hidden transition-all duration-300 ease-out"
+          className="relative w-full max-w-sm flex flex-col overflow-hidden transition-all duration-300 ease-out"
           style={{
+            maxHeight: '100%',
+            // The portal renders into <body>, which sets no text colour, so anything
+            // without its own colour would be black on the dark card.
+            color: '#fff',
             borderRadius: 28,
             background: 'linear-gradient(180deg, #1a1a1c, #121214)',
             boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(255,255,255,0.05)',
@@ -190,6 +192,10 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          <div
+            className="relative min-h-0 overflow-y-auto"
+            style={{ flex: '1 1 auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+          >
           {/* Hero — gold aurora glow + photo + name. Tighter padding (pt-5/pb-3) and a
               smaller photo (64px) than the first cut so the card doesn't dominate the
               screen — feels like a card, not a takeover. */}
@@ -236,8 +242,8 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
             </p>
           )}
 
-          {/* Body — natural height. The overlay above is the scroll container, so the
-              card itself doesn't need internal scrolling. */}
+          {/* Body — natural height; it scrolls with the photo above when the card
+              doesn't fit the screen. */}
           {statsVisible && (
           <div className="px-4 pb-3">
             {/* Their winning streak is the card's one big number, in gold; Best and the
@@ -298,10 +304,12 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
             </div>
           </div>
           )}
+          </div>
 
           {/* Action footer — parent-controlled. Falls back to a Close button if nothing
-              else was passed (e.g., the ChallengesTab quick-profile case). */}
-          <div className="relative px-4 pb-4 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+              else was passed (e.g., the ChallengesTab quick-profile case). Pinned: it
+              never scrolls out of view. */}
+          <div className="relative flex-shrink-0 px-4 pb-4 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
             {actions || (
               <button
                 onClick={handleClose}
@@ -311,7 +319,6 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               </button>
             )}
           </div>
-        </div>
         </div>
       </div>
 

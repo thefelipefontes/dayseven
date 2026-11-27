@@ -8,6 +8,19 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.9 (4000 max)
+
+```
+Friend profiles look right again.
+
+• Tap a friend's photo and their card fits your screen, with Challenge and Close always at the bottom
+• Their streaks, records and challenge numbers are easy to read again
+• The card starts with their current streak, right under their name
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.9 (4000 max)
 
 ```

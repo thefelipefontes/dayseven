@@ -312,7 +312,10 @@ class WorkoutManager: NSObject, ObservableObject {
         let isOutdoor = !isIndoor && (WorkoutManager.isOutdoorActivityType(activityType) || isOpenWaterSwim)
         isOutdoorWorkout = isOutdoor
         if isOutdoor {
-            routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+            // The workout builder's own route builder. HealthKit keeps its points across a crash
+            // (a free-standing HKWorkoutRouteBuilder loses them with the app), and finishing the
+            // workout saves the route with it.
+            routeBuilder = builder.seriesBuilder(for: HKSeriesType.workoutRoute()) as? HKWorkoutRouteBuilder
             startLocationCollection()
         }
 
@@ -460,11 +463,11 @@ class WorkoutManager: NSObject, ObservableObject {
         activeStartDate = now
         zoneStartDate = now
 
-        // The route recorded before the crash is lost with the old route builder. A new one
-        // keeps the rest of the route.
+        // The route recorded before the crash is still in the builder's route builder, so this
+        // picks up where it stopped. Only the time the app was down is missing.
         if info?.isOutdoor == true {
             isOutdoorWorkout = true
-            routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+            routeBuilder = recoveredBuilder.seriesBuilder(for: HKSeriesType.workoutRoute()) as? HKWorkoutRouteBuilder
             startLocationCollection()
         }
 
@@ -508,8 +511,7 @@ class WorkoutManager: NSObject, ObservableObject {
         // If user ended while paused, close out the in-progress pause interval
         // so it's included in accumulatedPauseTime below, and resume the HealthKit
         // session before ending it. Without the resume, session.end() on a paused
-        // session can leave the workout in a state where finishRoute(with:) fails
-        // and the GPS route is lost.
+        // session can leave the workout in a state where the GPS route is lost.
         let wasPaused = isPaused
         if let pauseStart = lastPauseDate {
             accumulatedPauseTime += endDate.timeIntervalSince(pauseStart)
@@ -531,6 +533,11 @@ class WorkoutManager: NSObject, ObservableObject {
         let activeSeconds = max(0, endDate.timeIntervalSince(startDate) - accumulatedPauseTime)
         let totalDuration = Int(activeSeconds / 60)
 
+        // Stop GPS. Whatever it delivers from here is after the end of the workout.
+        locationManager?.stopUpdatingLocation()
+        locationManager = nil
+        routeBuilder = nil
+
         session.end()
 
         // These HealthKit calls can take 3-5+ seconds
@@ -542,25 +549,14 @@ class WorkoutManager: NSObject, ObservableObject {
         // Nothing after `isEnding = true` may throw. A finishWorkout throw used to escape
         // here with isEnding and isActive still set: End stuck on "Saving..." for good, no
         // summary, and the workout never reached DaySeven. If HealthKit can't store it, keep
-        // going with the metrics captured above so it is at least saved here.
+        // going with the metrics captured above so it is at least saved here. This also saves
+        // the route: it belongs to the builder.
         var workout: HKWorkout?
         do {
             workout = try await builder.finishWorkout()
         } catch {
             print("[WorkoutManager] finishWorkout error — saving from captured metrics: \(error.localizedDescription)")
         }
-
-        // Stop GPS, and finalize the route if this was an outdoor workout HealthKit stored
-        locationManager?.stopUpdatingLocation()
-        locationManager = nil
-        if isOutdoorWorkout, let rb = routeBuilder, let finishedWorkout = workout {
-            do {
-                try await rb.finishRoute(with: finishedWorkout, metadata: nil)
-            } catch {
-                print("[WorkoutManager] Route finalization error: \(error.localizedDescription)")
-            }
-        }
-        routeBuilder = nil
         isOutdoorWorkout = false
 
         let result = WorkoutResult(
@@ -941,9 +937,9 @@ extension WorkoutManager: CLLocationManagerDelegate {
 
         Task { @MainActor in
             // Skip insertion while paused. Otherwise a dense cluster of stationary
-            // points lands inside the workout's paused interval, which makes
-            // finishRoute(with:) reject the whole route — users report losing
-            // the entire route polyline after any pause/resume cycle.
+            // points lands inside the workout's paused interval, which has cost the
+            // whole route — users reported losing the entire route polyline after
+            // any pause/resume cycle.
             guard !self.isPaused else { return }
             do {
                 try await self.routeBuilder?.insertRouteData(filtered)

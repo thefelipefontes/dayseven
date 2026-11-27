@@ -94,6 +94,8 @@ class AppViewModel: ObservableObject {
     private let maxWriteAttempts = 3
 
     init() {
+        OfflineQueueManager.shared.resolveUnownedQueue(signedInUid: Auth.auth().currentUser?.uid)
+
         // Give PhoneConnectivityService access to WorkoutManager for remote commands
         phoneService.workoutManager = workoutManager
         // A workout recovered after a crash, before this view model existed
@@ -274,7 +276,7 @@ class AppViewModel: ObservableObject {
             healthKitService.setupBackgroundDelivery()
 
             // Flush any offline-queued work now that we have fresh data
-            if OfflineQueueManager.shared.hasPendingWork {
+            if OfflineQueueManager.shared.hasPendingWork(for: uid) {
                 Task {
                     try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
                     await flushOfflineQueue()
@@ -370,6 +372,13 @@ class AppViewModel: ObservableObject {
     // `activities`: after a load timeout that is often [], and PATCHing it used to wipe the
     // user's entire history. The read's updateTime goes along as a precondition; if the phone
     // wrote in between, Firestore refuses and we re-read and try again.
+    //
+    // A write can outlive the account it started under: a request can take 15 seconds and
+    // signing out takes a moment. Signing out is also what makes a write in flight fail, and a
+    // failed write queues itself, so the queue the sign-out just cleared could get the old
+    // account's workout right back. So each one checks isCurrentAccount after every await and,
+    // once its account is gone, stops: it queues nothing and touches no state, which belongs to
+    // whoever is signed in now. Same trade as the sign-out: unsynced work doesn't outlive it.
 
     private func beginWrite() {
         writesInFlight += 1
@@ -377,6 +386,15 @@ class AppViewModel: ObservableObject {
 
     private func endWrite() {
         writesInFlight -= 1
+    }
+
+    /// Who is signed in right now
+    var signedInUid: String? {
+        authService.currentUser?.uid
+    }
+
+    private func isCurrentAccount(_ uid: String) -> Bool {
+        signedInUid == uid
     }
 
     /// Takes on the server's view of the user from a fresh read.
@@ -411,10 +429,18 @@ class AppViewModel: ObservableObject {
         await flushOfflineQueue()
 
         for attempt in 1...maxWriteAttempts {
+            guard isCurrentAccount(uid) else {
+                print("[SaveActivity] Signed out during the save — not writing or queueing it")
+                return nil
+            }
             let freshData: UserDocument
             do {
                 freshData = try await firestoreService.getUserData(uid: uid)
             } catch {
+                guard isCurrentAccount(uid) else {
+                    print("[SaveActivity] Signed out during the save — not queueing it")
+                    return nil
+                }
                 // Without a fresh read there is nothing safe to write: queue the workout and let
                 // the flush merge it into a real read later.
                 print("[SaveActivity] Could not read Firestore — queueing instead of writing: \(error.localizedDescription)")
@@ -422,10 +448,14 @@ class AppViewModel: ObservableObject {
                 // without a read the local list may be missing most of the week. The flush
                 // doesn't advance them either; the phone recalculates streaks from history on
                 // its next load.
-                OfflineQueueManager.shared.enqueue(activity)
+                OfflineQueueManager.shared.enqueue(activity, for: uid)
                 setActivities(activities)
                 pushDataToWidget()
                 return activity.id
+            }
+            guard isCurrentAccount(uid) else {
+                print("[SaveActivity] Signed out during the save — not writing or queueing it")
+                return nil
             }
             adopt(freshData)
             print("[SaveActivity] Refreshed \(activities.count) activities from Firestore before save")
@@ -482,8 +512,12 @@ class AppViewModel: ObservableObject {
                 print("[SaveActivity] Document changed since the read (attempt \(attempt)) — re-reading")
                 continue
             } catch {
+                guard isCurrentAccount(uid) else {
+                    print("[SaveActivity] Signed out during the save — not queueing it")
+                    return nil
+                }
                 print("[SaveActivity] FAILED — queueing for retry: \(error.localizedDescription)")
-                OfflineQueueManager.shared.enqueue(activity)
+                OfflineQueueManager.shared.enqueue(activity, for: uid)
                 // Still show it (and its goal) locally; the flush and the phone settle the rest.
                 setActivities(updatedActivities)
                 celebrate(completed)
@@ -492,6 +526,11 @@ class AppViewModel: ObservableObject {
             }
 
             print("[SaveActivity] Successfully saved \(updatedActivities.count) activities to Firestore")
+            guard isCurrentAccount(uid) else {
+                // It's in that account's document, and the phone may be showing that account
+                notifyPhoneDataChanged()
+                return activity.id
+            }
             setActivities(updatedActivities)
             celebrate(completed)
 
@@ -514,7 +553,7 @@ class AppViewModel: ObservableObject {
     /// in the offline queue is laid over `list`, so a queued save stays on the rings and a
     /// queued discard stays off them until the flush lands it.
     private func setActivities(_ list: [Activity]) {
-        let shown = OfflineQueueManager.shared.applyingPending(to: list)
+        let shown = signedInUid.map { OfflineQueueManager.shared.applyingPending(to: list, for: $0) } ?? list
         activitiesVersion += 1
         activities = shown
         weeklyProgress = calculateWeeklyProgress(activities: shown, goals: goals)
@@ -552,12 +591,20 @@ class AppViewModel: ObservableObject {
         }
 
         for attempt in 1...maxWriteAttempts {
+            guard isCurrentAccount(uid) else {
+                print("[UpdateActivity] Signed out during the edit — not writing or queueing it")
+                return
+            }
             let freshData: UserDocument
             do {
                 freshData = try await firestoreService.getUserData(uid: uid)
             } catch {
                 print("[UpdateActivity] Could not read Firestore — queueing the edit: \(error.localizedDescription)")
-                queueUpdate(update)
+                queueUpdate(update, for: uid)
+                return
+            }
+            guard isCurrentAccount(uid) else {
+                print("[UpdateActivity] Signed out during the edit — not writing or queueing it")
                 return
             }
             adopt(freshData)
@@ -565,9 +612,9 @@ class AppViewModel: ObservableObject {
             // Merge by id into the fresh list: only this one activity changes.
             var updatedActivities = freshData.activities
             guard let index = updatedActivities.firstIndex(where: { $0.id == activityId }) else {
-                if OfflineQueueManager.shared.pendingActivities.contains(where: { $0.id == activityId }) {
+                if OfflineQueueManager.shared.pendingActivities(for: uid).contains(where: { $0.id == activityId }) {
                     // Its save is still queued; the edit rides along with it.
-                    queueUpdate(update)
+                    queueUpdate(update, for: uid)
                 } else {
                     print("[UpdateActivity] Activity not in Firestore: \(activityId)")
                     setActivities(updatedActivities)
@@ -590,10 +637,14 @@ class AppViewModel: ObservableObject {
                 continue
             } catch {
                 print("[UpdateActivity] FAILED — queueing the edit: \(error.localizedDescription)")
-                queueUpdate(update)
+                queueUpdate(update, for: uid)
                 return
             }
             print("[UpdateActivity] Successfully updated activity \(activityId)")
+            guard isCurrentAccount(uid) else {
+                notifyPhoneDataChanged()
+                return
+            }
 
             setActivities(updatedActivities)
             lastSaveTime = Date()
@@ -606,8 +657,12 @@ class AppViewModel: ObservableObject {
         }
     }
 
-    private func queueUpdate(_ update: ActivityDetailsUpdate) {
-        OfflineQueueManager.shared.enqueueUpdate(update)
+    private func queueUpdate(_ update: ActivityDetailsUpdate, for uid: String) {
+        guard isCurrentAccount(uid) else {
+            print("[UpdateActivity] Signed out during the edit — not queueing it")
+            return
+        }
+        OfflineQueueManager.shared.enqueueUpdate(update, for: uid)
         setActivities(activities)
         pushDataToWidget()
     }
@@ -653,8 +708,8 @@ class AppViewModel: ObservableObject {
     /// saves once.
     func flushOfflineQueue() async {
         let queue = OfflineQueueManager.shared
-        guard queue.hasPendingWork, !queue.isFlushing else { return }
         guard let uid = authService.currentUser?.uid else { return }
+        guard queue.hasPendingWork(for: uid), !queue.isFlushing else { return }
 
         beginWrite()
         defer { endWrite() }
@@ -666,18 +721,22 @@ class AppViewModel: ObservableObject {
             do {
                 // Fetch fresh state from Firestore
                 let freshData = try await firestoreService.getUserData(uid: uid)
+                guard isCurrentAccount(uid) else {
+                    print("[OfflineFlush] Signed out during the flush — stopping")
+                    return
+                }
 
                 // Snapshot the queue after the read, so a discard made while it was in flight
                 // stays out. Anything queued from here on waits for the next flush.
-                let inserts = queue.pendingActivities
-                let updates = queue.pendingUpdates
-                let deletions = queue.pendingDeletions
+                let inserts = queue.pendingActivities(for: uid)
+                let updates = queue.pendingUpdates(for: uid)
+                let deletions = queue.pendingDeletions(for: uid)
                 print("[OfflineFlush] Flushing \(inserts.count) activities, \(updates.count) edits, \(deletions.count) discards")
 
                 let merged = OfflineQueueManager.merge(inserts: inserts, updates: updates, deletions: deletions, into: freshData.activities)
 
                 guard merged.changed else {
-                    queue.removeFlushed(inserts: inserts.map(\.id), updates: updates, deletions: deletions)
+                    queue.removeFlushed(inserts: inserts.map(\.id), updates: updates, deletions: deletions, for: uid)
                     print("[OfflineFlush] All pending already synced — cleared queue")
                     return
                 }
@@ -691,7 +750,11 @@ class AppViewModel: ObservableObject {
                     expectedUpdateTime: freshData.updateTime
                 )
 
-                queue.removeFlushed(inserts: inserts.map(\.id), updates: updates, deletions: deletions)
+                queue.removeFlushed(inserts: inserts.map(\.id), updates: updates, deletions: deletions, for: uid)
+                guard isCurrentAccount(uid) else {
+                    notifyPhoneDataChanged()
+                    return
+                }
 
                 // Update local state
                 adopt(freshData)
@@ -718,35 +781,45 @@ class AppViewModel: ObservableObject {
 
     // MARK: - Delete Activity (for discard after auto-save)
 
-    func deleteActivity(withId activityId: ActivityID) async {
+    /// `account` is who was signed in when the workout was discarded: the summary waits for its
+    /// save before calling this, and someone else can have signed in by then.
+    func deleteActivity(withId activityId: ActivityID, account: String?) async {
         beginWrite()
         defer { endWrite() }
+
+        guard let uid = account, isCurrentAccount(uid) else {
+            print("[DeleteActivity] Not signed in as the account that discarded it — skipping delete")
+            return
+        }
 
         // A queued auto-save (or edit) of this workout would otherwise be flushed later and
         // bring the discarded workout back.
         let queue = OfflineQueueManager.shared
-        let saveWasQueued = queue.drop(activityId)
+        let saveWasQueued = queue.drop(activityId, for: uid)
         // A flush already writing may still carry that save in its snapshot. Leave a queued
         // discard behind in that case; if there turns out to be nothing to discard, the next
         // flush just clears it.
         defer {
-            if saveWasQueued || queue.isFlushing, !queue.pendingDeletions.contains(activityId) {
-                queue.enqueueDeletion(activityId)
+            if saveWasQueued || queue.isFlushing, isCurrentAccount(uid), !queue.pendingDeletions(for: uid).contains(activityId) {
+                queue.enqueueDeletion(activityId, for: uid)
             }
         }
 
-        guard let uid = authService.currentUser?.uid else {
-            print("[DeleteActivity] No user uid — skipping delete")
-            return
-        }
-
         for attempt in 1...maxWriteAttempts {
+            guard isCurrentAccount(uid) else {
+                print("[DeleteActivity] Signed out during the discard — not writing or queueing it")
+                return
+            }
             let freshData: UserDocument
             do {
                 freshData = try await firestoreService.getUserData(uid: uid)
             } catch {
                 print("[DeleteActivity] Could not read Firestore — queueing the discard: \(error.localizedDescription)")
-                queueDeletion(activityId)
+                queueDeletion(activityId, for: uid)
+                return
+            }
+            guard isCurrentAccount(uid) else {
+                print("[DeleteActivity] Signed out during the discard — not writing or queueing it")
                 return
             }
             adopt(freshData)
@@ -807,10 +880,14 @@ class AppViewModel: ObservableObject {
                 continue
             } catch {
                 print("[DeleteActivity] FAILED — queueing the discard: \(error.localizedDescription)")
-                queueDeletion(activityId)
+                queueDeletion(activityId, for: uid)
                 return
             }
             print("[DeleteActivity] Successfully removed activity and saved \(updatedActivities.count) activities")
+            guard isCurrentAccount(uid) else {
+                notifyPhoneDataChanged()
+                return
+            }
 
             if liftsDropped { celebrationManager.clearCelebration(.strength) }
             if cardioDropped { celebrationManager.clearCelebration(.cardio) }
@@ -835,8 +912,12 @@ class AppViewModel: ObservableObject {
     }
 
     /// Queues a discard that couldn't be written, and takes the workout off the rings now.
-    private func queueDeletion(_ id: ActivityID) {
-        OfflineQueueManager.shared.enqueueDeletion(id)
+    private func queueDeletion(_ id: ActivityID, for uid: String) {
+        guard isCurrentAccount(uid) else {
+            print("[DeleteActivity] Signed out during the discard — not queueing it")
+            return
+        }
+        OfflineQueueManager.shared.enqueueDeletion(id, for: uid)
         setActivities(activities)
         pushDataToWidget()
     }

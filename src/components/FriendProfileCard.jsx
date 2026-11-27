@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getUserProfile } from '../services/userService';
 import { getDemoFriendProfile } from '../demoData';
-import { friendStatus, FRIEND_STATUS } from '../utils/friendStatus';
 import ZoomablePhoto from './ZoomablePhoto';
 import { formatDistanceValue, formatPace as formatPaceForUnit, unitLabel } from '../utils/distance';
 import ActivityIcon from './ActivityIcon';
@@ -22,7 +21,6 @@ const LineIcon = ({ d, color, size = 15, strokeWidth = 2 }) => (
   </svg>
 );
 const ICON = {
-  shield: ['M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3'],
   bolt: ['M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11'],
   pin: ['M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0', 'M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z'],
 };
@@ -135,9 +133,6 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   const cardioStreak = streaks.cardio ?? friend?.cardioStreak ?? 0;
   const recoveryStreak = streaks.recovery ?? friend?.recoveryStreak ?? 0;
   const stepsStreak = streaks.steps ?? friend?.stepsStreak ?? 0;
-  // On vacation, on an injury pause, or held last week (utils/friendStatus). Needs the full
-  // profile, so it shows only for friends (and on your own card).
-  const status = FRIEND_STATUS[friendStatus(profile)];
 
   // Records should never read lower than the current streak — that's a data invariant
   // (a "longest ever" can't be less than what's happening right now). Clamp on display
@@ -228,13 +223,6 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               </p>
               {friend?.username && (
                 <p className="truncate" style={{ fontSize: 12.5, color: '#9a9a9a', marginTop: 2 }}>@{friend.username}</p>
-              )}
-              {status && (
-                <div className="mt-2.5 inline-flex items-center gap-1.5 text-xs rounded-full px-3 py-1" style={{ backgroundColor: 'rgba(255,255,255,0.07)', color: '#ddd' }}>
-                  <LineIcon d={ICON.shield} color="#ddd" size={13} />
-                  <span>{status.label}</span>
-                  <span style={{ color: '#8a8a8a' }}>· {status.detail}</span>
-                </div>
               )}
             </div>
           </div>

@@ -1,6 +1,9 @@
-// What someone's streaks are doing right now, for the badge on their profile card and next
-// to their name on the leaderboard: on vacation, on an injury pause, or held by the Streak
-// Shield last week. One at a time, in that order.
+// What someone's streaks are doing right now, for the emoji next to their name on the
+// leaderboard: on vacation, on an injury pause, or held by the Streak Shield last week. One
+// at a time, in that order.
+//
+// Their profile card doesn't show it: the card leads with their current streak, and a hold
+// on a streak of 0 read as "streak safe" right above "0 weeks".
 //
 // Read from their profile as stored, which only updates when they open the app, so this
 // applies the same auto-ends their app would on its next launch: vacation after 14 days
@@ -12,9 +15,9 @@ import { addWeeks, isHoldWeek } from './streakShield';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const FRIEND_STATUS = {
-  vacation: { emoji: '🌴', label: 'On vacation', detail: 'streaks paused' },
-  injury: { emoji: '🩹', label: 'Injury pause', detail: 'streaks paused' },
-  held: { emoji: '🛡️', label: 'Last week held', detail: 'streak safe' },
+  vacation: { emoji: '🌴', label: 'On vacation' },
+  injury: { emoji: '🩹', label: 'Injury pause' },
+  held: { emoji: '🛡️', label: 'Last week held' },
 };
 
 /** 'vacation' | 'injury' | 'held' | null for a user profile doc. */
